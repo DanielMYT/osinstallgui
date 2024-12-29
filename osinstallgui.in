@@ -1,0 +1,1141 @@
+#!/usr/bin/env bash
+
+# osinstallgui version @@VERSION@@ - Copyright (C) 2024 Daniel Massey.
+# Rewrite of installation program originally from MassOS, now with GTK3 GUI.
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# The configuration file is set correctly after running 'make'.
+# shellcheck disable=SC1091
+
+# We intentionally ignore return values from declarations in most cases.
+# shellcheck disable=SC2155
+
+# What is our name, what is our version?
+export inv="$(basename "$0")"
+export ver="@@VERSION@@"
+
+# Function to write a message to the log file.
+write_log() {
+  echo "=== $* ===" >>"$log"
+}
+
+# Function to display an error message and exit with error.
+die() {
+  echo "ERROR: $*" >&2
+  write_log "ERROR: $*"
+  exit 1
+}
+
+# Function to display warning message.
+warn() {
+  echo "WARNING: $*" >&2
+  write_log "WARNING: $*"
+}
+
+# Check dependency - exit if they are not found.
+check_dep() {
+  # $1 is the program, $2 is the package it comes from (if different).
+  if ! which "$1" &>/dev/null; then
+    if test ! -z "$2"; then
+      die "$inv requires $1 ($2) in order to run, but it was not found."
+    else
+      die "$inv requires $1 in order to run, but it was not found."
+    fi
+  fi
+}
+
+# Functions for displaying each screen type using yad.
+yad_menu() {
+  local title="$1 ⎯ $inv"
+  local menu="$2"
+  shift 2
+  local response="$(yad --list --title="$title" --text="$menu" --column="Option" --column="Description" "$@" --width=600 --height=300)"
+  echo "$response"
+}
+yad_forcemenu() {
+  local title="$1 ⎯ $inv"
+  local menu="$2"
+  shift 2
+  local response
+  while test -z "$response"; do
+    response="$(yad --list --title="$title" --text="$menu" --column="Option" --column="Description" "$@" --width=600 --height=300)"
+  done
+  echo "$response"
+}
+yad_message() {
+  yad --title="$1 ⎯ $inv" --text="$2" --width=600 --height=200 --button="OK":0
+}
+yad_prompt() {
+  yad --title="$1 ⎯ $inv" --text="$2" --width=600 --height=200 --button="Yes":0 --button="No":1
+  return $?
+}
+yad_input() {
+  local title="$1 ⎯ $inv"
+  local text="$2"
+  # This is the only exception to disabling SC2155, but we deal with it.
+  local response
+  response="$(yad --entry --title="$title" --text="$text" --width=600 --height=200 --button="OK":0)"
+  local status=$?
+  echo "$response"
+  return $status
+}
+yad_password() {
+  local title="$1 ⎯ $inv"
+  local text="$2"
+  # This is the only exception to disabling SC2155, but we deal with it.
+  local response
+  response="$(yad --entry --title="$title" --text="$text" --hide-text --width=600 --height=200 --button="OK":0)"
+  local status=$?
+  echo "$response"
+  return $status
+}
+
+# Helper functions.
+helper_format() {
+  write_log "Trying to format $1 as $2."
+  case "$2" in
+    ext4) mkfs.ext4 -vFL "$3" "$1" &>>"$log" ;;
+    btrfs) mkfs.btrfs -vfL "$3" "$1"&>>"$log" ;;
+    swap) mkswap "$1" &>>"$log" ;;
+    vfat) mkfs.fat -F32 -vn "$3" "$1" &>>"$log" ;;
+  esac
+  local status=$?
+  if test $status -eq 0; then
+    write_log "Format of $1 as $2 was successful."
+  else
+    write_log "Format of $1 as $2 was unsuccessful."
+  fi
+  return $status
+}
+helper_mount() {
+  write_log "Trying to mount $1 at $2."
+  mkdir -pv "$2" &>>"$log"
+  mount -v "$1" "$2" &>>"$log"
+  local status=$?
+  if test $status -eq 0; then
+    write_log "$1 was successfully mounted at $2."
+  else
+    write_log "$1 was unable to be mounted at $2."
+  fi
+  return $status
+}
+helper_umount() {
+  write_log "Trying to unmount $1."
+  umount -Rv "$1" &>>"$log"
+  local status=$?
+  if test $status -eq 0; then
+    write_log "$1 was successfully unmounted."
+  else
+    write_log "$1 was unable to be unmounted."
+  fi
+  return $status
+}
+helper_chroot_advanced() {
+  # Chroot with aspirations - setting up virtual filesystems too.
+  # Partially adapted from the 'mass-chroot' utility from MassOS.
+  test ! -z "$1" || return
+  local chrootdir="$1"
+  shift
+  write_log "Trying to enter an advanced chroot in $chrootdir."
+  # Mount virtual filesystems.
+  sync
+  mount -v --bind /dev "$chrootdir"/dev &>>"$log" || return
+  mount -v --bind /dev/pts "$chrootdir"/dev/pts &>>"$log" || return
+  mount -vt tmpfs devshm "$chrootdir"/dev/shm &>>"$log" || return
+  mount -vt proc proc "$chrootdir"/proc &>>"$log" || return
+  mount -vt sysfs sysfs "$chrootdir"/sys &>>"$log" || return
+  mount -vt tmpfs tmpfs "$chrootdir"/run &>>"$log" || return
+  mkdir -vp "$chrootdir"/run/lock &>>"$log"
+  if test $efimode -eq 1; then
+    # Need to also mount efivarfs filesystem for UEFI boot mode.
+    mount -vt efivarfs efivarfs "$chrootdir"/sys/firmware/efi/efivars &>>"$log" || return
+  fi
+  sync
+  # Enter the chroot.
+  chroot "$chrootdir" "$@" &>>"$log"
+  local chrootstatus=$?
+  # Unmount virtual filesystems.
+  sync
+  if test $efimode -eq 1; then
+    umount -Rv "$chrootdir"/sys/firmware/efi/efivars &>>"$log" || return
+  fi
+  umount -Rv "$chrootdir"/dev/pts &>>"$log" || return
+  umount -Rv "$chrootdir"/dev/shm &>>"$log" || return
+  umount -Rv "$chrootdir"/dev &>>"$log" || return
+  umount -Rv "$chrootdir"/proc &>>"$log" || return
+  umount -Rv "$chrootdir"/sys &>>"$log" || return
+  umount -Rv "$chrootdir"/run &>>"$log" || return
+  sync
+  # Report the result and return.
+  if test $chrootstatus -eq 0; then
+    write_log "Advanced chroot exited after successful exit code."
+  else
+    write_log "Advanced chroot exited after unsuccessful exit code $chrootstatus."
+  fi
+  return $chrootstatus
+}
+
+# Stage functions.
+stage_mainmenu() {
+  # Let the user choose what they want to do on the main menu.
+  local choice="$(yad_menu "Main Menu" "Welcome to $osname! What would you like to do?" \
+  "Install" "Begin the installation of $osname onto your system." \
+  "About" "See information about this installation program." \
+  "Restart" "Restart the system." \
+  "Shutdown" "Shut down the system." \
+  "Exit" "Exit this installation program.")"
+  case "${choice%%|*}" in
+    "Install") export stage=1 ;;
+    "About") yad_message "About" "This is osinstallgui version $ver, running on $osname, accessing data from @@CONFPATH@@.\n\nosinstallgui is a full rewrite of the installation program originally from MassOS, now yad-based (GTK3 GUI) as opposed to dialog-based (Ncurses TUI). It has also been redesigned from the ground-up to be more distribution-independent, and now uses much more robust state-machine-based logic under the hood.\n\nosinstallgui was created by Daniel Massey, and is licensed under the GNU General Public License version 3 or later. More information about the project, along with its source code, can be found at <a href='https://github.com/DanielMYT/osinstallgui'>https://github.com/DanielMYT/osinstallgui</a>." ;;
+    "Restart") shutdown -r now ;;
+    "Shutdown") shutdown -h now ;;
+    "Exit"|"") exit 0 ;;
+  esac
+}
+stage_locale() {
+  # Set up the list of locales, as well as the list of the most common ones.
+  local locales=() localescore=()
+  # Acceptable core locales - searched locales will be matched against this.
+  local localescorelist="de_DE.UTF-8 el_GR.UTF-8 en_GB.UTF-8 en_US.UTF-8 es_ES.UTF-8 es_MX.UTF-8 fr_FR.UTF-8 it_IT.UTF-8 ro_RO.UTF-8 ru_RU.UTF-8 pl_PL.UTF-8 pt_BR.UTF-8 pt_PT.UTF-8 sv_SE.UTF-8"
+  # Get a list of locales from the locales file.
+  while IFS= read -r line; do
+    # Filter the line and then uncomment it.
+    # We are filtering for UTF-8 and no comments with space between # and text.
+    local linefiltered="$(echo "$line" | grep UTF-8 | cut -d' ' -f1 | sed -e '/^#\s.*$/d' -e 's/#//')"
+    # Only append to the list of locales if this line exists.
+    if test ! -z "$linefiltered"; then
+      # Cross-reference the locale descriptions data file.
+      local localedesc="$(grep -sm1 "^$linefiltered:" "@@CONFPATH@@"/data/locales.desc | cut -d' ' -f2-)"
+      if test -z "$localedesc"; then
+        # Either locales.desc file was missing or no match was found.
+        localedesc="UNKNOWN"
+      fi
+      # Add both the filtered locale name and its description to the list.
+      locales+=("$linefiltered" "$localedesc")
+      # If it should be in the core list, add it to that.
+      for corelocale in $localescorelist; do
+        if test "$corelocale" = "$linefiltered"; then
+          localescore+=("$linefiltered" "$localedesc")
+        fi
+      done
+    fi
+  done < "$OSINSTALLGUI_LOCALES_FILE"
+  # Ask the user to select a core locale, or "Other" for all locales.
+  local choice="$(yad_menu "Language Setup" "Please select the locale which corresponds to your preferred language. Choose 'Other' to see all locales." "${localescore[@]}" "Other" "Show all available locales")"
+  choice="${choice%%|*}"
+  # Go back to the previous stage if the user backed out.
+  if test -z "$choice"; then
+    export stage=0
+    return
+  fi
+  # If the user selected "Other", then go to the submenu.
+  if test "$choice" = "Other"; then
+    # Ask the user to select from all possible locales.
+    choice="$(yad_menu "Language Setup" "Please select the locale which corresponds to your preferred language. This is the list of all available locales." "${locales[@]}")"
+    choice="${choice%%|*}"
+    # Start locale setup again if the user backed out of this submenu.
+    test ! -z "$choice" || return
+  fi
+  # Save the choice to the global configuration and move to the next stage.
+  export tgtlocale="$choice"
+  export stage=2
+}
+stage_keymap() {
+  # Get a list of all supported keymaps.
+  if test "$OSINSTALLGUI_KEYMAPS_SYSTEMD" = "1" && which localectl &>/dev/null; then
+    # Use the systemd method (localectl).
+    local keymapsavailable=($(localectl list-keymaps | sort -u))
+  else
+    # Use the manual search method (messier and requires filtering).
+    local keymapsavailable=($(find /usr/share/keymaps -type f ! -name README.md ! -name \*.inc ! -name \*compose\* ! -name \*.m4 ! -name \*.doc -exec basename {} \; | sort -u | sed 's/.map.gz//'))
+  fi
+  # Define the core keymaps - the most common ones, similar to as above.
+  local keymapscommon="de el es fr it pl pt ro ru sv uk us"
+  # Get descriptions for each keymap.
+  local keymaps=() keymapscore=()
+  for keymap in "${keymapsavailable[@]}"; do
+    # Cross-reference the keymap descriptions data file.
+    local keymapdesc="$(grep -sm1 "^$keymap:" "@@CONFPATH@@"/data/keymaps.desc | cut -d' ' -f2-)"
+    if test -z "$keymapdesc"; then
+      # Either the keymaps.desc file was missing or no match was found.
+      keymapdesc="UNKNOWN"
+    fi
+    # Add both the keymap name and its description to the list.
+    keymaps+=("$keymap" "$keymapdesc")
+    # If it should be in the core list, add it to that.
+    for corekeymap in $keymapscommon; do
+      if test "$corekeymap" = "$keymap"; then
+        keymapscore+=("$keymap" "$keymapdesc")
+      fi
+    done
+  done
+  # Ask the user to select a core keymap, or "Other" for all keymaps.
+  local choice="$(yad_menu "Keyboard Setup" "Please select the keymap which corresponds to your preferred keyboard layout. Choose 'Other' to see all keymaps." "${keymapscore[@]}" "Other" "Show all available keymaps")"
+  choice="${choice%%|*}"
+  # Go back to the previous stage if the user backed out.
+  if test -z "$choice"; then
+    export stage=1
+    return
+  fi
+  # If the user selected "Other", then go to the submenu.
+  if test "$choice" = "Other"; then
+    # Ask the user to select from all possible keymaps.
+    choice="$(yad_menu "Keyboard Setup" "Please select the keymap which corresponds to your preferred keyboard layout. This is the list of all available keymaps." "${keymaps[@]}")"
+    choice="${choice%%|*}"
+    # Start keymap setup again if the user backed out of this submenu.
+    test ! -z "$choice" || return
+  fi
+  # Save the choice to the global configuration and move to the next stage.
+  export tgtkeymap="$choice"
+  export stage=3
+}
+stage_timezone() {
+  # Get a list of regions, filtering out non-Continents and non-Oceans.
+  local tzregions=()
+  for tzregion in $(find /usr/share/zoneinfo -mindepth 1 -maxdepth 1 -type d ! -name right ! -name posix ! -name Etc ! -name Brazil ! -name Canada ! -name Chile ! -name Mexico ! -name US -exec basename {} \; | sort -u); do
+    # Two copies for yad_menu, only difference is space instead of underscore.
+    tzregions+=("$tzregion" "$(echo "$tzregion" | sed 's/_/ /g')")
+  done
+  # Let the user decide which region are in, before finding the cities.
+  local choice_tzregion="$(yad_menu "Timezone Setup" "Please select the region which best corresponds to your geographical location." "${tzregions[@]}")"
+  choice_tzregion="${choice_tzregion%%|*}"
+  # Go back to the previous stage if the user backs out.
+  if test -z "$choice_tzregion"; then
+    export stage=2
+    return
+  fi
+  # Get a list of cities corresponding to the selected region.
+  local tzcities=()
+  for tzcity in $(find /usr/share/zoneinfo/"$choice_tzregion" -mindepth 1 -maxdepth 1 -type f -exec basename {} \; | sort -u); do
+    # Two copies for yad_menu, only difference is space instead of underscore.
+    tzcities+=("$tzcity" "$(echo "$tzcity" | sed 's/_/ /g')")
+  done
+  # Let the user decide which city they are in from their selected region.
+  local choice_tzcity="$(yad_menu "Timezone Setup" "Please select the city from $choice_tzregion which best corresponds to your geographical location." "${tzcities[@]}")"
+  choice_tzcity="${choice_tzcity%%|*}"
+  # Start again from region selection if the user backs out.
+  test ! -z "$choice_tzcity" || return
+  # Mark this timezone for later use.
+  export tgttimezone="$choice_tzregion/$choice_tzcity"
+  # Move on to the next stage.
+  export stage=4
+}
+stage_rootpw() {
+  # Only do this stage if rootpw is enabled in the osinstallgui configuration.
+  if test "$OSINSTALLGUI_ROOTPW" = "1"; then
+    # Ask the user for the root password. Again SC2155 applies here.
+    local rootpw1
+    rootpw1="$(yad_password "Root Password" "Please enter a new password for the root account. This is different from the passwords for regular user accounts.")"
+    # Go back to the previous stage if the user backed out.
+    if test $? -ne 0; then
+      export stage=3
+      return
+    fi
+    # Ensure the password is not empty.
+    if test -z "$rootpw1"; then
+      # Complain to the user and try again.
+      yad_message "Error" "The root password field cannot be left blank."
+      return
+    fi
+    # Now ask for the root password again, for verification purposes.
+    local rootpw2
+    rootpw2="$(yad_password "Root Password" "Please repeat the new password for the root account.")"
+    test $? -eq 0 || return
+    # Ensure the passwords match.
+    if test "$rootpw1" != "$rootpw2"; then
+      # Complain about this problem to the user.
+      yad_message "Error" "The passwords you entered for the root account do not match."
+    fi
+    # Password was set successfully. Save it for later.
+    export tgtrootpw="$rootpw1"
+  fi
+  # Go to the next stage.
+  export stage=5
+}
+stage_usersetup() {
+  # Take note that SC2155 will apply for all input boxes in this section.
+  # Ask the user for their full name. User can leave this blank if they wish.
+  local fullname
+  fullname="$(yad_input "User Setup" "Please enter the full name of the primary user. This field can be left blank if you'd prefer the new account to only be identifiable by its username.")"
+  # Go back to the previous stage if the user backed out.
+  if test $? -ne 0; then
+    # Previous stage is 4 if root password is enabled, 3 if not.
+    if test "$OSINSTALLGUI_ROOTPW" = "1"; then
+      export stage=4
+    else
+      export stage=3
+    fi
+    return
+  fi
+  # Filter input for only alphanumeric characters and spaces.
+  fullname="$(echo "$fullname" | tr -cd '[:alnum:] [:space:]')"
+  # Filter username for only the first word (i.e., forename), and lowercase.
+  local username="$(echo "$fullname" | cut -d' ' -f1 | tr '[:upper:]' '[:lower:]')"
+  # Behaviour for username input will depend on whether fullname was set.
+  if test ! -z "$fullname"; then
+    # Ask if the user is OK with the default username from fullname being used.
+    if ! yad_prompt "User Setup" "You entered '$fullname' as your full name. The automatically generated username for this would be '$username'. Would you like to keep this default? Answer 'NO' if you wish to set a custom username."; then
+      # Ask for the custom username.
+      username="$(yad_input "User Setup" "Please enter the username you wish to use for $fullname's account. The username must NOT contain spaces, and must ONLY consist of alphanumeric characters. Leave it blank to use the default of '$username'.")"
+      if test -z "$username"; then
+        # This input was not mandatory because fullname was set, so revert it.
+        username="$(echo "$fullname" | cut -d' ' -f1 | tr '[:upper:]' '[:lower:]')"
+      else
+        # Filter again for the newly entered username.
+        username="$(echo "$username" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
+      fi
+    fi
+  else
+    # No fullname was specified, so username input will be mandatory.
+    username="$(yad_input "User Setup" "Please enter the username you wish to use for the new account. The username must NOT contain spaces, and must ONLY consist of alphanumeric characters. Since you did not specify a full name, this field cannot be left blank.")"
+    test $? -eq 0 || return
+    if test -z "$username"; then
+      # User didn't listen, make them face consequences.
+      yad_message "Error" "The username field cannot be left blank because you did not previously specify a full name."
+      return
+    fi
+    # Filter the input once again.
+    username="$(echo "$username" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
+  fi
+  # Now set the global values and move on to the user password stage.
+  export tgtusername="$username" tgtfullname="$fullname"
+  export stage=6
+}
+stage_userpw() {
+  # Once again, SC2155 will apply for the input boxes here, so take care.
+  # Go back to the previous stage if the username was not set.
+  if test -z "$tgtusername"; then
+    export stage=5
+    return
+  fi
+  # Ask the user for the password.
+  local userpw1
+  userpw1="$(yad_password "User Setup" "Please think of a secure password for the account '$tgtusername', and enter it here.")"
+  # Go back to the previous stage if the user backed out.
+  if test $? -ne 0; then
+    export stage=5
+    return
+  fi
+  # Ensure the field was not left blank.
+  if test -z "$userpw1"; then
+    # User didn't listen.
+    yad_message "Error" "The password field cannot be left blank. You must think of a secure password for the account '$tgtusername'."
+    return
+  fi
+  # Ensure the password is strong if cracklib-check is enabled and installed.
+  if test "$OSINSTALLGUI_USER_PWSCORE" = "1" && which cracklib-check &>/dev/null; then
+    # Invoke cracklib-check, capturing output and filtering only the reason.
+    local userpwscore="$(echo "$userpw1" | cracklib-check | sed "s/$userpw1: //")"
+    # If the password check failed due to it being insecure.
+    if test "$userpwscore" != "OK"; then
+      # userpwscore will contain the reason it failed the check.
+      yad_message "Error" "The password you entered is not strong enough. This is because $userpwscore."
+      return
+    fi
+  fi
+  # Ask for the password again, for verification purposes.
+  local userpw2
+  userpw2="$(yad_password "User Setup" "Please repeat the new password for the account '$tgtusername'.")"
+  # Ensure the passwords match.
+  if test "$userpw1" != "$userpw2"; then
+    yad_message "Error" "The passwords you entered for the account '$tgtusername' do not match."
+    return
+  fi
+  # User password setup is done, now save and move on to the next stage.
+  export tgtuserpw="$userpw1"
+  export stage=7
+}
+stage_disk() {
+  # Complain if there are no REAL disks on the system.
+  if test -z "$(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort)"; then
+    yad_message "Error" "No physical disks were found on your system. If your internal drive is failing to be detected, please ensure all of the following are true:\n\n1) Windows Bitlocker drive encryption is disabled.\n\n2) The 'SATA Mode' or 'Storage Mode' option in your BIOS is set to 'AHCI'.\n\n3) All options in your BIOS relating to 'RAID', 'Intel RST', 'Intel Optane', 'Intel Smart Storage', etc. are DISABLED.\n\nIf you need help, please visit <a href='https://github.com/DanielMYT/osinstallgui/wiki/Troubleshooting'>https://github.com/DanielMYT/osinstallgui/wiki/Troubleshooting</a>."
+    # Go back to the main menu, since a reboot will probably be needed.
+    export stage=0
+    return
+  fi
+  # Find all REAL disks on the system.
+  local disks=($(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort))
+  # This will contain each entry for displaying disks to the user.
+  local diskentries=()
+  # Loop through every detected disk
+  for disk in "${disks[@]}"; do
+    # Description includes both disk size (calculated in GiB) and disk model.
+    # Both identifier and description get appended as expected by yad menu.
+    diskentries+=("/dev/$disk" "$(($(cat "/sys/block/$disk/size") * 512 / 1073741824))GiB ⎯ $(cat "/sys/block/$disk/device/model")")
+  done
+  # Now display the entries to the user, so they can choose which disk to use.
+  local choice="$(yad_menu "Disk Selection" "Please choose the disk you wish to use for the installation." "${diskentries[@]}")"
+  # Go back to the previous stage if the user backed out.
+  if test -z "$choice"; then
+    export stage=6
+    return
+  fi
+  local diskselection="${choice%%|*}"
+  # Get the list of mounted partitions (if any), sorted by mount depth.
+  local mountedparts="$(mount | grep "$diskselection" | cut -d' ' -f1,3 | sort -rk2 | cut -d' ' -f1)"
+  # Allow us to try and unmount them if any exist.
+  if test ! -z "$mountedparts"; then
+    if yad_prompt "Warning" "The selected disk appears to have mounted partitions. In order to use it for the installation, all partitions must first be unmounted. Do you want this program to try and unmount them for you?"; then
+      # Try to unmount each partition. Sort was done because we can't use -R.
+      for part in $mountedparts; do
+        sync; umount "$part" &>>/dev/null
+        sync; swapoff "$part" &>>/dev/null
+      done
+      # Check if there are still mounted partitions.
+      if mount | grep -q "$diskselection"; then
+        # Complain and return.
+        yad_message "Error" "This program was unable to unmount all partitions on the disk. Please try to unmount them manually, or alternatively select a different disk for the installation."
+        return
+      fi
+    else
+      # User didn't even let us try, what can we do?
+      return
+    fi
+  fi
+  # Set up this disk as the target disk for installation.
+  export tgtdisk="$diskselection"
+  # Move to the partitioning stage.
+  export stage=8
+}
+stage_partition() {
+  # Ensure the disk still exists by this point.
+  if test ! -b "$tgtdisk"; then
+    # The disk is no longer valid (possibly got disconnected). Go back.
+    yad_message "Error" "The disk you have selected no longer exists. Please ensure that it has not been disconnected from the system."
+    export stage=7
+    return
+  fi
+  # Let the user decide how they want to partition the disk.
+  local choice="$(yad_menu "Partitioning" "Please choose how you would like to partition the disk $tgtdisk." \
+  "1" "Erase the entire disk and install $osname." \
+  "2" "Install $osname to an existing partition on the disk." \
+  "3" "Manually create and/or modify partitions before installing.")"
+  # Back to the disk selection if the user backed out.
+  case "${choice%%|*}" in
+    "1")
+      # Erase the entire disk and install the operating system.
+      # If btrfs is available, ask which filesystem the user wants to use.
+      if test "$OSINSTALLGUI_ALLOW_BTRFS" = "1" && which mkfs.btrfs &>/dev/null && yad_prompt "Erase Disk" "Would you like to use btrfs for the root partition? This is an alternative to the traditional ext4 filesystem, which supports more advanced features, and is recommended in most cases."; then
+        local btrfsuse=1
+      else
+        local btrfsuse=0
+      fi
+      # Ask whether the user wants a swap partition or not.
+      # TODO: Support swap files.
+      local swapuse=0
+      if yad_prompt "Erase Disk" "Swap is a reserved area on the disk which can be used to prevent the system from crashing if it runs out of memory. Would you like the disk to have a swap partition with a size of 2GiB?"; then
+        swapuse=1
+      fi
+      # This will be the final warning, return if the user chickens out.
+      yad_prompt "Erase Disk" "WARNING! Any existing data on the disk $tgtdisk is now going to be PERMANENTLY DELETED. This action is IRREVERSIBLE. Are you sure you want to continue with this action?" || return
+      # Wipe filesystems, overwrite MBR (if any), and erase GPT (if any).
+      write_log "Erasing the disk $tgtdisk."
+      sync; wipefs -af "$tgtdisk" &>>"$log"
+      sync; dd if=/dev/zero of="$tgtdisk" bs=1M count=10 &>>"$log"
+      sync; sgdisk -Z "$tgtdisk" &>>"$log"
+      write_log "Finished erasing the disk $tgtdisk."
+      # Sync changes with the kernel.
+      sync; partprobe
+      # Decide which partitions to make depending on boot mode and swap choice.
+      if test $efimode -eq 1 && test $swapuse -eq 1; then
+        # UEFI with swap.
+        local operations='g\nn\n\n\n+500M\nt\n1\nn\n\n\n-2G\nn\n\n\n\nt\n3\n19\nw\n'
+      elif test $efimode -eq 1; then
+        # UEFI without swap.
+        local operations='g\nn\n\n\n+500M\nt\n1\nn\n\n\n\nw\n'
+      elif test $swapuse -eq 1; then
+        # Legacy BIOS with swap.
+        local operations='o\nn\n\n\n\n-2G\nn\n\n\n\n\nt\n2\n82\nw\n'
+      else
+        # Legacy BIOS without swap.
+        local operations='o\nn\n\n\n\n\nw\n'
+      fi
+      # Partition the disk.
+      write_log "Partitioning the disk $tgtdisk using fdisk."
+      echo -e "$operations" | fdisk "$tgtdisk" &>>"$log"
+      if test $? -ne 0; then
+        # OH NO! It failed, this could be bad.
+        write_log "Failed to partition the disk $tgtdisk using fdisk."
+        yad_message "Error" "Failed to partition the disk $tgtdisk (fdisk returned an unsuccessful exit code). A log file can be found at $log."
+        return
+      fi
+      # Get a list of all the partitions which were just created.
+      local diskparts=($(lsblk -lnp "$tgtdisk" | grep part | cut -d' ' -f1))
+      # Ensure the disk was partitioned correctly by counting partitions.
+      if test $efimode -eq 1 && test $swapuse -eq 1 && test -z "${diskparts[2]}"; then
+        # EFI+Swap configuration needs 3 partitions.
+        yad_message "Error" "Failed to partition the disk $tgtdisk (the operation didn't create all 3 needed partitions). A log file can be found at $log."
+        return
+      elif { test $efimode -eq 1 || test $swapuse -eq 1; } && test -z "${diskparts[1]}"; then
+        # EFI-only or Swap-only configuration needs 2 partitions.
+        yad_message "Error" "Failed to partition the disk $tgtdisk (the operation didn't create all 2 needed partitions). A log file can be found at $log."
+        return
+      elif test -z "${diskparts[0]}"; then
+        # No partitions at all - this would be an error in all cases.
+        yad_message "Error" "Failed to partition the disk $tgtdisk (the operation didn't create any partitions). A log file can be found at $log."
+        return
+      fi
+      # Set up the global partition variables with these new values.
+      if test $efimode -eq 1; then
+        # EFI is the first partition, root is the second partition.
+        export tgtefi="${diskparts[0]}"
+        export tgtroot="${diskparts[1]}"
+      else
+        # Root is the first and only partition.
+        export tgtroot="${diskparts[0]}"
+      fi
+      if test $swapuse -eq 1; then
+        # Swap is always the last partition.
+        export tgtswap="${diskparts[-1]}"
+      fi
+      # Format partitions.
+      if test $btrfsuse -eq 1; then
+        helper_format "$tgtroot" btrfs "$osname"
+        if test $? -ne 0; then
+          yad_message "Error" "Failed to format the root filesystem $tgtroot as btrfs. A log file can be found at $log."
+          return
+        fi
+      else
+        helper_format "$tgtroot" ext4 "$osname"
+        if test $? -ne 0; then
+          yad_message "Error" "Failed to format the root filesystem $tgtroot as ext4. A log file can be found at $log."
+          return
+        fi
+      fi
+      if test $efimode -eq 1; then
+        helper_format "$tgtefi" vfat "EFI SYSTEM"
+        if test $? -ne 0; then
+          yad_message "Error" "Failed to format the EFI System Partition $tgtefi as vfat. A log file can be found at $log."
+          return
+        fi
+      fi
+      if test $swapuse -eq 1; then
+        helper_format "$tgtswap" swap
+        if test $? -ne 0; then
+          yad_message "Error" "Failed to format the swap partition $tgtswap. A log file can be found at $log."
+          return
+        fi
+      fi
+      # Proceed to the next stage.
+      export stage=9
+      ;;
+    "2")
+      # Install the operating system to an existing partition on the disk.
+      # First, check if there are any partitions at all.
+      local diskparts=($(lsblk -lnp "$tgtdisk" | grep part | cut -d' ' -f1))
+      if test -z "${diskparts[0]}"; then
+        yad_message "Error" "There are currently no partitions on the disk $tgtdisk. Please use either the 'erase disk' or 'manual partitioning' option to resolve this problem."
+        return
+      fi
+      # If we are in UEFI mode, then an EFI System Partition is mandatory.
+      # We can format it if it's unformatted, but two partitions are needed.
+      if test $efimode -eq 1 && test -z "${diskparts[1]}"; then
+        yad_message "Error" "This system is booted in UEFI mode. To install $osname to the disk $tgtdisk, a small EFI system partition (of around 100MiB-500MiB) must exist, formatted as vfat (FAT32), which will store the bootloader files, however only a single partition was found. Please use either the 'erase disk' or 'manual partitioning' option to resolve this problem."
+        return
+      fi
+      # Get a detailed list of partitions and partition info, for the menu.
+      local partentries=()
+      for part in "${diskparts[@]}"; do
+        local partsize="$(lsblk -lnp "$part" | xargs | cut -d' ' -f4)"
+        local partfs="$(blkid -o value -s TYPE "$part")"
+        local partlabel="$(blkid -o value -s LABEL "$part")"
+        # Unknown filesystem would be blank by default.
+        if test -z "$partfs"; then
+          partfs="unknown"
+        fi
+        # Add the entry, description is based on whether it is labelled or not.
+        if test ! -z "$partlabel"; then
+          partentries+=("$part" "$partsize ⎯ $partfs ⎯ $partlabel")
+        else
+          partentries+=("$part" "$partsize ⎯ $partfs")
+        fi
+      done
+      # Ask which root partition to use.
+      local choicerootpar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the root filesystem. It will be formatted, and any existing data on it will be deleted." "${partentries[@]}")"
+      # Go back if the user backed out.
+      test ! -z "$choicerootpar" || return
+      # Get the selection as normal.
+      local rootparselection="${choicerootpar%%|*}"
+      # If btrfs is available, ask which filesystem the user wants to use.
+      if test "$OSINSTALLGUI_ALLOW_BTRFS" = "1" && which mkfs.btrfs &>/dev/null && yad_prompt "Partition Setup" "Would you like to use btrfs for the root partition? This is an alternative to the traditional ext4 filesystem, which supports more advanced features, and is recommended in most cases."; then
+        local btrfsuse=1
+      else
+        local btrfsuse=0
+      fi
+      # Ask about EFI system partition if we are in UEFI mode.
+      if test $efimode -eq 1; then
+        local choiceefipar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the EFI system partition. It may be small (around 100MiB-500MiB), and must be DIFFERENT from your selection for the root partition. Note that if you are dual-booting, it is normal for all operating systems to share the same EFI system partition, so formatting will not be needed if it is already a vfat (FAT32) filesystem." "${partentries[@]}")"
+        test ! -z "$choiceefipar" || return
+        local efiparselection="${choiceefipar%%|*}"
+        # The root partition and EFI partition cannot be the same.
+        if test "$efiparselection" = "$rootparselection"; then
+          # Did the user not even listen to what they were told?
+          yad_message "Error" "The selected EFI system partition $efiparselection must NOT be the same as the root partition $rootparselection."
+          return
+        fi
+        # If the selected partition is not vfat (FAT32), then we need to format it.
+        local efiformat=0
+        if test "$(blkid -o value -s TYPE "$efiparselection")" != "vfat"; then
+          if yad_prompt "Partition Setup" "The selected EFI system partition $efiparselection is not formatted as vfat (FAT32). It will therefore be formatted by this program, and any existing data on it will be deleted. Is this OK?"; then
+            # Mark that we need to format this.
+            efiformat=1
+          else
+            return;
+          fi
+        fi
+      fi
+      # Ask about swap partition if the user wants that and there are enough.
+      # TODO: Support swap files.
+      local swapuse=0 swapformat=0
+      if { test $efimode -eq 1 && test ! -z "${diskparts[2]}"; } || { test $efimode -eq 0 && test ! -z "${diskparts[1]}"; }; then
+        if yad_prompt "Partition Setup" "Swap is a reserved area on the disk which can be used to prevent the system from crashing if it runs out of memory. Do you have a swap partition on the disk $tgtdisk you would like to use?"; then
+          swapuse=1
+          local choiceswappar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for swap. It must be DIFFERENT from your selections for the root partition and EFI system partition (if applicable)." "${diskparts[@]}")"
+          test ! -z "$choiceswappar" || return
+          local swapparselection="${choiceswappar%%|*}"
+          # The swap partition cannot be the same as any other partition.
+          if test "$swapparselection" = "$rootparselection" || test "$swapparselection" = "$efiparselection"; then
+            # Did the user STILL not listen to what they were told?
+            if test $efimode -eq 1; then
+              yad_message "Error" "The selected swap partition $swapparselection must NOT be the same as the root partition $rootparselection or the EFI system partition $efiparselection."
+            else
+              yad_message "Error" "The selected swap partition $swapparselection must NOT be the same as the root partition."
+            fi
+            return
+          fi
+          # If the specified partition is not formatted to swap, we need to do that.
+          if test "$(blkid -o value -s TYPE "$swapparselection")" != "swap"; then
+            if yad_prompt "Partition Setup" "The selected swap partition $swapparselection is not formatted as swap. It will therefore be formatted by this program, and any existing data on it will be deleted. Is this OK?"; then
+              # Mark that we need to format this.
+              swapformat=1
+            else
+              return
+            fi
+          fi
+        fi
+      fi
+      # Final warning before format, depending on what we are formatting.
+      local formatinfo=""
+      # EFI is OK or EFI needs formatting.
+      if test $efiformat -eq 1; then
+        formatinfo+="\n$efiparselection as vfat"
+      fi
+      # swap or no swap?
+      if test $swapformat -eq 1; then
+        formatinfo+="\n$swapparselection as swap"
+      fi
+      # ext4 or btrfs for the root filesystem.
+      if test $btrfsuse -eq 1; then
+        formatinfo+="\n$rootparselection as btrfs"
+      else
+        formatinfo+="\n$rootparselection as ext4"
+      fi
+      # Display the warning.
+      yad_prompt "Partition Setup" "The following partition(s) are now going to be formatted, and any existing data will be PERMANENTLY DELETED. This action is IRREVERSIBLE. Are you sure you want to continue with this action?\n$formatinfo" || return
+      # Mark the partitions now.
+      export tgtroot="$rootparselection" tgtefi="$efiparselection" tgtswap="$swapparselection"
+      # Format partitions as required.
+      if test $btrfsuse -eq 1; then
+        helper_format "$tgtroot" btrfs "$osname"
+        if test $? -ne 0; then
+          yad_message "Error" "Failed to format the root filesystem $tgtroot as btrfs. A log file can be found at $log."
+          return
+        fi
+      else
+        helper_format "$tgtroot" ext4 "$osname"
+        if test $? -ne 0; then
+          yad_message "Error" "Failed to format the root filesystem $tgtroot as ext4. A log file can be found at $log."
+          return
+        fi
+      fi
+      if test $efimode -eq 1 && test $efiformat -eq 1; then
+        helper_format "$tgtefi" vfat "EFI SYSTEM"
+        if test $? -ne 0; then
+          yad_message "Error" "Failed to format the EFI System Partition $tgtefi as vfat. A log file can be found at $log."
+          return
+        fi
+      fi
+      if test $swapuse -eq 1 && test $swapformat -eq 1; then
+        helper_format "$tgtswap" swap
+        if test $? -ne 0; then
+          yad_message "Error" "Failed to format the swap partition $tgtswap. A log file can be found at $log."
+          return
+        fi
+      fi
+      # Proceed to the next stage.
+      export stage=9
+      ;;
+    "3")
+      # Manually partition the disk before installing.
+      # We can only do this if gparted exists.
+      if which gparted &>/dev/null; then
+        yad_message "Manual partitioning" "The graphical partitioning program gparted will be launched. Once you have finished partitioning with this program, close the program, then this installation program will continue."
+        write_log "Launching gparted as an external program."
+        gparted "$tgtdisk" &>>"$log"
+        write_log "Execution of gparted as an external program finished."
+        return
+      else
+        yad_message "Error" "Unable to start manual partitioning because the required program gparted was not found on your system."
+        return
+      fi
+      ;;
+    "")
+      # Go back to the previous stage.
+      export stage=7
+      ;;
+  esac
+}
+stage_mount() {
+  # Ensure we know which partitions we are working with.
+  if test -z "$tgtroot"; then
+    # Step back a stage, because we don't know what we are working with.
+    export stage=8
+    return
+  fi
+  sync
+  # Try to mount the root partition, ready for installation.
+  if ! helper_mount "$tgtroot" "$tgtpath"; then
+    # Complain and go back to the disk setup stage.
+    yad_message "Error" "Unable to mount the root partition $tgtroot. The installation cannot continue. A log file can be found at $log."
+    # TODO: Determine whether it would be better to return to 7 or 8.
+    export stage=7
+    return
+  fi
+  # Mount the EFI partition if needed.
+  if test $efimode -eq 1 && ! helper_mount "$tgtefi" "$tgtpath/boot/efi"; then
+    yad_message "Error" "Unable to mount the EFI system partition $tgtroot. The installation cannot continue. A log file can be found at $log."
+    export stage=7
+    return
+  fi
+  # If we got through without issues, then lets begin the installation.
+  export stage=10
+}
+stage_installation() {
+  # This is where the fun happens.
+  # One last check to ensure the partitions are mounted before continuing.
+  sync
+  if ! mount | grep "$tgtroot" &>/dev/null || { test $efimode -eq 1 && ! mount | grep "$tgtefi" &>/dev/null; }; then
+    # Return to the mounting stage.
+    export stage=9
+    return
+  fi
+  # Determine whether we are using a squashfs or tar image.
+  if test "$(file -b "$OSINSTALLGUI_ROOTFS" | cut -d' ' -f1)" = "Squashfs"; then
+    # Unsquash the image.
+    write_log "Unsquashing $OSINSTALLGUI_ROOTFS to $tgtpath."
+    unsquashfs -f -q -d "$tgtpath" "$OSINSTALLGUI_ROOTFS" &>>"$log"
+    if test $? -ne 0; then
+      write_log "Failed to unsquash $OSINSTALLGUI_ROOTFS to $tgtpath."
+      yad_message "Error" "The installation process did not complete successfully (unsquashfs operation failed). A log file can be found at $log."
+      # Return to the main menu because reboot will probably be needed.
+      export stage=0
+      return
+    fi
+    write_log "Successfully unsquashed $OSINSTALLGUI_ROOTFS to $tgtpath."
+  else
+    # Untar the image.
+    write_log "Untarring $OSINSTALLGUI_ROOTFS to $tgtpath."
+    tar -xpf "$OSINSTALLGUI_ROOTFS" -C "$tgtpath" &>>"$log"
+    if test $? -ne 0; then
+      write_log "Failed to untar $OSINSTALLGUI_ROOTFS to $tgtpath."
+      yad_message "Error" "The installation process did not complete successfully (tar operation failed). A log file can be found at $log."
+      # Return to the main menu because reboot will probably be needed.
+      export stage=0
+      return
+    fi
+    write_log "Successfully untarred $OSINSTALLGUI_ROOTFS to $tgtpath."
+  fi
+  sync
+  # Now move to the post installation stage.
+  export stage=11
+}
+stage_postinstall() {
+  # This stage only exists for running the specified rootfs cleanup script.
+  # Only need to do anything if the cleanup script was set in the config.
+  if test ! -z "$OSINSTALLGUI_CLEANUP_CMD"; then
+    # Ensure the file is executable.
+    if test ! -x "$tgtpath/$OSINSTALLGUI_CLEANUP_CMD"; then
+      # Warn about the problem, even though it is not fatal.
+      yad_message "Error" "Cannot run the rootfs cleanup script because it does not exist or is not executable. This stage of the installation will therefore be skipped, which may cause the newly installed system to be tainted."
+      # Move on to the next stage (system configuration) immediately.
+      export stage=12
+      return
+    fi
+    # Run the script.
+    write_log "Running the rootfs cleanup script $OSINSTALLGUI_CLEANUP_CMD."
+    # Try to run the script.
+    if ! helper_chroot_advanced "$tgtpath" "$OSINSTALLGUI_CLEANUP_CMD" &>>"$log"; then
+      # Warn about it exiting unsuccessfully. But again still continue.
+      write_log "The rootfs cleanup script did not complete successfully."
+      yad_message "Error" "The rootfs cleanup script did not complete successfully. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
+    else
+      write_log "Successfully ran the rootfs cleanup script $OSINSTALLGUI_CLEANUP_CMD."
+    fi
+  fi
+  # Go to the next stage, which will be the full system configuration.
+  export stage=12
+}
+stage_systemconfig() {
+  # This stage is for configuring the system after the installation.
+  # Generate the fstab file.
+  write_log "Generating /etc/fstab for the target system."
+  : > "$tgtpath"/etc/fstab
+  echo "# This /etc/fstab was automatically generated by osinstallgui." >> "$tgtpath"/etc/fstab
+  echo "# Do not modify unless you know what you are doing." >> "$tgtpath"/etc/fstab
+  echo "# Any mistakes in this file could prevent the system from booting." >> "$tgtpath"/etc/fstab
+  # Root filesystem fstab entry.
+  echo "UUID=$(blkid -o value -s UUID "$tgtroot") / $(blkid -o value -s TYPE "$tgtroot") defaults 1 1" >> "$tgtpath"/etc/fstab
+  # EFI system partition fstab entry.
+  if test ! -z "$tgtefi"; then
+    echo "UUID=$(blkid -o value -s UUID "$tgtefi") /boot/efi vfat umask=0077 0 2" >> "$tgtpath"/etc/fstab
+  fi
+  # Swap partition fstab entry.
+  if test ! -z "$tgtswap"; then
+    echo "UUID=$(blkid -o value -s UUID "$tgtswap") none swap sw 0 0" >> "$tgtpath"/etc/fstab
+  fi
+  write_log "Finished generation of /etc/fstab for the target system."
+  # Prepare the locale for generation by uncommenting the line in the file.
+  sed -i "s/#$tgtlocale/$tgtlocale/" "$tgtpath/$OSINSTALLGUI_LOCALES_FILE"
+  # Generate the locales using a chroot environment.
+  write_log "Generating locales in chroot using $OSINSTALLGUI_LOCALES_CMD."
+  if ! helper_chroot_advanced "$tgtpath" "$OSINSTALLGUI_LOCALES_CMD" &>>"$log"; then
+    # Warn about it being unsuccessful.
+    write_log "$OSINSTALLGUI_LOCALES_CMD failed to generate locales."
+    yad_message "Error" "The locales could not be successfully generated on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found $log."
+  else
+    write_log "$OSINSTALLGUI_LOCALES_CMD successfully generated locales."
+  fi
+  # Set up the locale configuration file.
+  echo "LANG=$tgtlocale" >> "$tgtpath"/etc/locale.conf
+  # Set up the keymap configuration file.
+  echo "KEYMAP=$tgtkeymap" >> "$tgtpath"/etc/vconsole.conf
+  # Set up the timezone.
+  write_log "Setting timezone of target system to $tgttimezone."
+  ln -sfv /usr/share/zoneinfo/"$tgttimezone" "$tgtpath"/etc/localtime  &>>"$log"
+  write_log "Timezone of target system successfully set to $tgttimezone."
+  # Update the hardware clock.
+  # TODO: Allow localtime instead of UTC, for some distros which prefer that.
+  write_log "Updating hardware clock in chroot environment."
+  if ! helper_chroot_advanced "$tgtpath" /usr/bin/env hwclock -v --systohc &>>"$log"; then
+    # Warn about it being unsuccessful.
+    write_log "Failed to update hardware clock in chroot environment."
+    yad_message "Error" "The hardware clock could not be updated correctly on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found $log."
+  else
+    write_log "Successfully updated hardware clock in chroot environment."
+  fi
+  # Set up the root password, if root password is required.
+  if test "$OSINSTALLGUI_ROOTPW" = "1"; then
+    write_log "Setting the root password using chpasswd."
+    if ! echo "root:$tgtrootpw" | chpasswd -R "$tgtpath" &>>"$log"; then
+      # Warn about it being unsuccessful.
+      write_log "Failed to set the root password."
+      yad_message "Error" "The root password could not be set on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
+    else
+      write_log "Successfully set the root password."
+    fi
+  fi
+  # Set up the new primary user account - depending on whether fullname is set.
+  if test ! -z "$fullname"; then
+    # Fullname is set.
+    write_log "Creating account for $tgtusername ($tgtfullname) using useradd."
+    if ! useradd -R "$tgtpath" -c "$tgtfullname" -G "$OSINSTALLGUI_ADMIN_GROUP" -ms "$OSINSTALLGUI_USER_SHELL" "$tgtusername" &>>"$log"; then
+      # Warn about it being unsuccessful.
+      write_log "Failed to create account for $tgtusername ($tgtfullname)."
+      yad_message "Error" "The primary user account '$tgtusername' ($tgtfullname) could not be created on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
+    else
+      write_log "Successfully created account for $tgtusername ($tgtfullname)."
+    fi
+  else
+    # No fullname is set.
+    write_log "Creating account for $tgtusername using useradd."
+    if ! useradd -R "$tgtpath" -G "$OSINSTALLGUI_ADMIN_GROUP" -ms "$OSINSTALLGUI_USER_SHELL" "$tgtusername" &>>"$log"; then
+      # Warn about it being unsuccessful.
+      write_log "Failed to create account for $tgtusername."
+      yad_message "Error" "The primary user account '$tgtusername' could not be created on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
+    else
+      write_log "Successfully created account for $tgtusername."
+    fi
+  fi
+  # Set the password for the user account.
+  write_log "Setting password for $tgtusername using chpasswd."
+  if ! echo "$tgtusername:$tgtuserpw" | chpasswd -R "$tgtpath" &>>"$log"; then
+    # Warn about it being unsuccessful.
+    write_log "Failed to set password for $tgtusername."
+    yad_message "Error" "The passwd for '$tgtusername' could not be set on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
+  else
+    write_log "Successfully set password for $tgtusername"
+  fi
+  # Proceed to the next stage (initramfs generation).
+  export stage=13
+}
+stage_initramfs() {
+  # Generate an initramfs for the target system.
+  # TODO: Display a window while it's being generated, to avoid confusion.
+  write_log "Generating an initramfs for the target system."
+  if ! helper_chroot_advanced "$tgtpath" $OSINSTALLGUI_INITRAMFS_CMD; then
+    # OH NO! Something went horribly wrong. Report the error.
+    write_log "Failed to generate an initramfs for the target system."
+    yad_message "Error" "Failed to generate an initramfs for the target system. The installation process will continue anyway, however it is VERY LIKELY that the target system will FAIL TO BOOT, and manual intervention will be needed after the installation. A log file can be found at $log."
+  else
+    write_log "Successfully generated an initramfs for the target system."
+  fi
+  # Proceed to the penultimate stage (bootloader setup).
+  export stage=14
+}
+stage_bootloader() {
+  # Install the bootloader on the target system.
+  local grub_args
+  if test $efimode -eq 1; then
+    # UEFI mode - ask if the user wants to install in "removable" mode.
+    if ! yad_prompt "Bootloader" "The GRUB UEFI bootloader can be installed in either 'internal' or 'removable' mode, to make it easier to boot depending on which type of disk you are installing $osname to. If you are installing to an internal Hard Drive or SSD, then answer 'YES' to install in 'internal' mode. If you are installing to a flash drive or USB-attached HDD/SSD, then answer 'NO' to install in 'removable' mode."; then
+      # Add the --removable flag to the arguments for grub-install.
+      grub_args+="--removable"
+    fi
+  else
+    # Legacy BIOS mode - the disk has to be explicitly passed as an argument.
+    grub_args+="$tgtdisk"
+  fi
+  # Try to install the bootloader.
+  write_log "Trying to install bootloader using 'grub-install $grub_args'."
+  if ! helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install $grub_args; then
+    # Complain about the problem.
+    write_log "Bootloader installation using 'grub-install $grub_args' failed."
+    yad_message "Error" "The GRUB bootloader installation failed. Manual intervention will likely be needed to correct this problem and make your system bootable. A log file can be found at $log."
+  else
+    write_log "Bootloader installation using 'grub-install $grub_args' succeeded."
+  fi
+  # Try to generate the grub configuration file.
+  write_log "Trying to generate GRUB configuration file using 'grub-mkconfig'."
+  if ! helper_chroot_advanced "$tgtpath" /usr/bin/env grub-mkconfig -o /boot/grub/grub.cfg; then
+    # Complain about the problem.
+    write_log "Bootloader configuration using 'grub-mkconfig' failed."
+    yad_message "Error" "The GRUB bootloader configuration failed. Manual intervention will likely be needed to correct this problem and make your system bootable. A log file can be found at $log."
+  fi
+  # Go to the final stage.
+  export stage=15
+}
+stage_finish() {
+  # Unmount all filesystems.
+  write_log "Unmounting all filesystems..."
+  helper_umount "$tgtpath"
+  write_log "Finished unmounting all filesystems (hopefully)."
+  # Show finishing message.
+  if yad_prompt "Installation" "The installation of $osname has finished. Select 'YES' to shut down your system now, so you can restart into the new installation. Select 'NO' if, instead, you'd like to continue testing the live environment. In any case, remember to remove the installation media, to ensure you boot into the new installation as opposed to the live environment."; then
+    shutdown -h now
+  fi
+  # Exit the thing (stage will be less than 0 so the main loop will stop).
+  export stage=-1
+}
+
+# Get a timestamp for naming logs and temporary files/directories.
+export stamp="$(date "+%Y%m%d%H%M%S%N")"
+
+# Determine our host's name.
+export osname="$(cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2 | sed 's/"//g')"
+if test -z "$osname"; then
+  export osname="an OS with no name"
+fi
+
+# Create a temporary directory for us to use.
+export workdir="/tmp/osinstallgui$stamp"
+mkdir -p "$workdir"
+
+# Set up the log file.
+export log="$workdir/osinstallgui.log"
+touch "$log"
+
+# Ensure we are running as root.
+if test $EUID -ne 0; then
+  die "$inv must be run as root (use 'pkexec' or 'sudo')."
+fi
+
+# Ensure the global config file exists, and source it if it does.
+if test -f "@@CONFPATH@@"/osinstallgui.conf; then
+  write_log "Sourcing config file '@@CONFPATH@@/osinstallgui.conf'."
+  . "@@CONFPATH@@"/osinstallgui.conf &>>"$log" || true
+  write_log "Sourced config file '@@CONFPATH@@/osinstallgui.conf'."
+else
+  write_log "Config file '@@CONFPATH/osinstallgui.conf' does not exist."
+fi
+
+# If any configuration values are missing, raise an error.
+for val in "$OSINSTALLGUI_ROOTFS" "$OSINSTALLGUI_CLEANUP_CMD" "$OSINSTALLGUI_INITRAMFS_CMD" "$OSINSTALLGUI_ALLOW_BTRFS" "$OSINSTALLGUI_LOCALES_CMD" "$OSINSTALLGUI_LOCALES_FILE" "$OSINSTALLGUI_KEYMAPS_SYSTEMD" "$OSINSTALLGUI_ROOTPW" "$OSINSTALLGUI_ADMIN_GROUP" "$OSINSTALLGUI_USER_SHELL" "$OSINSTALLGUI_USER_PWSCORE"; do
+  if test -z "$val"; then
+    die "$inv cannot run due to one or more missing config value(s)."
+  fi
+done
+
+# Ensure data files exist.
+if test ! -e "@@CONFPATH@@"/data/locales.desc; then
+  warn "$inv could not find the file '@@CONFPATH@@/data/locales.desc'."
+  warn "$inv will therefore display all locales with description 'UNKNOWN'."
+fi
+if test ! -e "@@CONFPATH@@"/data/keymaps.desc; then
+  warn "$inv could not find the file '@@CONFPATH@@/data/keymaps.desc'."
+  warn "$inv will therefore display all keymaps with description 'UNKNOWN'."
+fi
+
+# Check dependencies - ordered by importance and when they are used.
+check_dep yad
+check_dep gdisk gptfdisk
+check_dep sgdisk gptfdisk
+check_dep parted
+check_dep partprobe parted
+check_dep mkfs.ext4 e2fsprogs
+check_dep mkfs.fat dosfstools
+check_dep unsquashfs squashfs-tools
+
+# Disk and partition variables need to be accessed by the whole program.
+export tgtdisk="" tgtroot="" tgtefi="" tgtswap=""
+
+# Other global setup variables which need to be accessed by the whole program.
+export tgtlocale="" tgtkeymap="" tgtrootpw="" tgtusername="" tgtfullname="" tgtuserpw=""
+
+# Set up the mount directory for the target system.
+export tgtpath="$workdir/target"
+mkdir -p "$tgtpath"
+
+# Determine whether our host is booted in Legacy BIOS or UEFI mode.
+if test -e /sys/firmware/efi/systab; then
+  export efimode=1
+else
+  export efimode=0
+fi
+
+# Set the current stage we are on.
+export stage=0
+
+# Enter the main program loop.
+while test $stage -ge 0; do
+  # Run the function corresponding to the stage we are currently on.
+  case $stage in
+    0) stage_mainmenu ;;
+    1) stage_locale ;;
+    2) stage_keymap ;;
+    3) stage_timezone ;;
+    4) stage_rootpw ;;
+    5) stage_usersetup ;;
+    6) stage_userpw ;;
+    7) stage_disk ;;
+    8) stage_partition ;;
+    9) stage_mount ;;
+    10) stage_installation ;;
+    11) stage_postinstall ;;
+    12) stage_systemconfig ;;
+    13) stage_initramfs ;;
+    14) stage_bootloader ;;
+    15) stage_finish ;;
+  esac
+done

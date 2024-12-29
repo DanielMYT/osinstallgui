@@ -1,0 +1,247 @@
+3l: Three-layer ergonomic alternative
+adnw: German Neo-based ergonomic (Aus der Neo-Welt)
+amiga-de: German for Amiga
+amiga-us: US for Amiga
+ANSI-dvorak: US Dvorak (ANSI standard)
+apple-a1048-sv: Swedish for Apple A1048
+apple-a1243-sv: Swedish for Apple A1243
+apple-a1243-sv-fn-reverse: Swedish for Apple A1243 (reversed Fn keys)
+apple-internal-0x0253-sv: Swedish for Apple internal 0x0253
+apple-internal-0x0253-sv-fn-reverse: Swedish for Apple internal 0x0253 (reversed Fn keys)
+applkey: Apple function key special mapping
+atari-de: German for Atari
+atari-se: Swedish for Atari
+atari-uk-falcon: UK for Atari Falcon
+atari-us: US for Atari
+azerty: French/Belgian AZERTY
+backspace: Modified backspace behavior
+bashkir: Bashkir
+be-latin1: Belgian (Latin-1)
+bg_bds-cp1251: Bulgarian BDS (CP1251)
+bg_bds-utf8: Bulgarian BDS (UTF-8)
+bg-cp1251: Bulgarian (CP1251)
+bg-cp855: Bulgarian (CP855)
+bg_pho-cp1251: Bulgarian phonetic (CP1251)
+bg_pho-utf8: Bulgarian phonetic (UTF-8)
+bone: German ergonomic NEO variant
+br-abnt: Brazilian ABNT
+br-abnt2: Brazilian ABNT2
+br-latin1-abnt2: Brazilian ABNT2 (Latin-1)
+br-latin1-us: Brazilian US variant (Latin-1)
+by: Belarusian
+by-cp1251: Belarusian (CP1251)
+bywin-cp1251: Belarusian for Windows (CP1251)
+ca: Canadian multilingual
+carpalx: Minimal-movement ergonomic
+carpalx-full: Full minimal-movement ergonomic
+cf: Canadian French
+colemak: English ergonomic alternative
+croat: Croatian
+ctrl: Modified control behavior
+cz: Czech
+cz-cp1250: Czech (CP1250)
+cz-lat2: Czech (Latin-2)
+cz-lat2-prog: Czech programmer's (Latin-2)
+cz-qwertz: Czech QWERTZ
+cz-us-qwertz: Czech US QWERTZ
+de: German QWERTZ
+de_alt_UTF-8: German alternative (UTF-8)
+de_CH-latin1: Swiss German (Latin-1)
+defkeymap: System default
+defkeymap_V1.0: System default version 1.0
+de-latin1: German (Latin-1)
+de-latin1-nodeadkeys: German (Latin-1, no dead keys)
+de-mobii: German mobile device
+dk: Danish
+dk-latin1: Danish (Latin-1)
+dvorak: US Dvorak
+dvorak-ca-fr: Canadian French Dvorak
+dvorak-de: German Dvorak
+dvorak-es: Spanish Dvorak
+dvorak-fr: French Dvorak
+dvorak-l: US Dvorak left-handed
+dvorak-la: Latin American Dvorak
+dvorak-no: Norwegian Dvorak
+dvorak-programmer: US Dvorak programmer's
+dvorak-r: US Dvorak right-handed
+dvorak-ru: Russian Dvorak
+dvorak-sv-a1: Swedish Dvorak type A1
+dvorak-sv-a5: Swedish Dvorak type A5
+dvorak-uk: UK Dvorak
+dvorak-ukp: UK Dvorak programmer's
+emacs: Emacs-optimized
+emacs2: Emacs-optimized alternative
+en: English
+es: Spanish
+es-cp850: Spanish (CP850)
+es-olpc: Spanish for OLPC
+et: Estonian
+et-nodeadkeys: Estonian (no dead keys)
+euro: Euro symbol enhanced
+euro1: Euro symbol enhanced alternative 1
+euro2: Euro symbol enhanced alternative 2
+fa: Persian (Farsi)
+fi: Finnish
+fr: French AZERTY
+fr-bepo: French BÉPO ergonomic
+fr-bepo-latin9: French BÉPO (Latin-9)
+fr_CH: Swiss French
+fr_CH-latin1: Swiss French (Latin-1)
+fr-latin1: French (Latin-1)
+fr-latin9: French (Latin-9)
+fr-pc: French for PC
+gr: Greek
+gr-pc: Greek for PC
+hu: Hungarian
+hu101: Hungarian 101-key
+ie: Irish
+il: Israeli
+il-heb: Israeli Hebrew
+il-phonetic: Israeli phonetic
+is-latin1: Icelandic (Latin-1)
+is-latin1-us: Icelandic US variant (Latin-1)
+it: Italian
+it2: Italian alternative
+it-ibm: Italian for IBM
+jp106: Japanese 106-key
+kazakh: Kazakh
+keypad: Numeric keypad specific
+koy: Ergonomic Koy variant
+ky_alt_sh-UTF-8: Kyrgyz alternative (UTF-8)
+kyrgyz: Kyrgyz
+la-latin1: Latin American (Latin-1)
+lt: Lithuanian
+lt.baltic: Lithuanian Baltic variant
+lt.l4: Lithuanian L4 variant
+lv: Latvian
+lv-tilde: Latvian (with tilde)
+mac-be: Belgian for Mac
+mac-de_CH: Swiss German for Mac
+mac-de-latin1: German for Mac (Latin-1)
+mac-de-latin1-nodeadkeys: German for Mac (Latin-1, no dead keys)
+mac-dk-latin1: Danish for Mac (Latin-1)
+mac-dvorak: US Dvorak for Mac
+mac-es: Spanish for Mac
+mac-euro: Euro symbol enhanced for Mac
+mac-euro2: Euro symbol enhanced for Mac alternative
+mac-fi-latin1: Finnish for Mac (Latin-1)
+mac-fr: French for Mac
+mac-fr_CH-latin1: Swiss French for Mac (Latin-1)
+mac-fr-legacy: French for Mac legacy
+mac-it: Italian for Mac
+mac-no-latin1: Norwegian for Mac (Latin-1)
+mac-pl: Polish for Mac
+mac-pt-latin1: Portuguese for Mac (Latin-1)
+mac-se: Swedish for Mac
+mac-template: Mac template
+mac-uk: UK for Mac
+mac-us: US for Mac
+mk: Macedonian
+mk0: Macedonian alternative
+mk-cp1251: Macedonian (CP1251)
+mk-utf: Macedonian (UTF-8)
+mod-dh-ansi-us: US Dvorak-hybrid (ANSI)
+mod-dh-ansi-us-awing: US Dvorak-hybrid (ANSI, A-wing)
+mod-dh-ansi-us-fatz: US Dvorak-hybrid (ANSI, Fatz)
+mod-dh-ansi-us-fatz-wide: US Dvorak-hybrid (ANSI, Fatz, wide)
+mod-dh-ansi-us-wide: US Dvorak-hybrid (ANSI, wide)
+mod-dh-iso-uk: UK Dvorak-hybrid (ISO)
+mod-dh-iso-uk-wide: UK Dvorak-hybrid (ISO, wide)
+mod-dh-iso-us: US Dvorak-hybrid (ISO)
+mod-dh-iso-us-wide: US Dvorak-hybrid (ISO, wide)
+mod-dh-matrix-us: US Dvorak-hybrid (matrix)
+neo: German Neo ergonomic
+neoqwertz: German Neo-QWERTZ variant
+nl: Dutch
+nl2: Dutch alternative
+no: Norwegian
+no-latin1: Norwegian (Latin-1)
+pc110: IBM PC 110 specific
+pl: Polish
+pl1: Polish alternative 1
+pl2: Polish alternative 2
+pl3: Polish alternative 3
+pl4: Polish alternative 4
+pt-latin1: Portuguese (Latin-1)
+pt-latin9: Portuguese (Latin-9)
+pt-olpc: Portuguese for OLPC
+ro: Romanian
+ro_std: Romanian standardized
+ro_win: Romanian for Windows
+ru: Russian
+ru1: Russian alternative 1
+ru2: Russian alternative 2
+ru3: Russian alternative 3
+ru4: Russian alternative 4
+ru-cp1251: Russian (CP1251)
+ru-ms: Russian Microsoft
+ru_win: Russian for Windows
+ruwin_alt-CP1251: Russian for Windows alternative (CP1251)
+ruwin_alt-KOI8-R: Russian for Windows alternative (KOI8-R)
+ruwin_alt_sh-UTF-8: Russian for Windows alternative (UTF-8)
+ruwin_alt-UTF-8: Russian for Windows alternative (UTF-8)
+ruwin_cplk-CP1251: Russian for Windows (Capslock, CP1251)
+ruwin_cplk-KOI8-R: Russian for Windows (Capslock, KOI8-R)
+ruwin_cplk-UTF-8: Russian for Windows (Capslock, UTF-8)
+ruwin_ctrl-CP1251: Russian for Windows (Control, CP1251)
+ruwin_ctrl-KOI8-R: Russian for Windows (Control, KOI8-R)
+ruwin_ctrl-UTF-8: Russian for Windows (Control, UTF-8)
+ruwin_ct_sh-CP1251: Russian for Windows (Control-Shift, CP1251)
+ruwin_ct_sh-KOI8-R: Russian for Windows (Control-Shift, KOI8-R)
+ruwin_ct_sh-UTF-8: Russian for Windows (Control-Shift, UTF-8)
+ru-yawerty: Russian YAWERTY variant
+se-fi-ir209: Swedish-Finnish for IR209
+se-fi-lat6: Swedish-Finnish (Latin-6)
+se-ir209: Swedish for IR209
+se-lat6: Swedish (Latin-6)
+sg: Swiss German
+sg-latin1: Swiss German (Latin-1)
+sg-latin1-lk450: Swiss German for LK450 (Latin-1)
+sk-prog-qwerty: Slovak programmer's QWERTY
+sk-prog-qwertz: Slovak programmer's QWERTZ
+sk-qwerty: Slovak QWERTY
+sk-qwertz: Slovak QWERTZ
+slovene: Slovenian
+sr-cy: Serbian Cyrillic
+sr-latin: Serbian Latin
+sundvorak: US Dvorak for Sun
+sunkeymap: Sun generic
+sun-pl: Polish for Sun
+sun-pl-altgraph: Polish for Sun (with AltGr)
+sunt4-es: Spanish for Sun Type 4
+sunt4-fi-latin1: Finnish for Sun Type 4 (Latin-1)
+sunt4-no-latin1: Norwegian for Sun Type 4 (Latin-1)
+sunt5-cz-us: Czech-US for Sun Type 5
+sunt5-de-latin1: German for Sun Type 5 (Latin-1)
+sunt5-es: Spanish for Sun Type 5
+sunt5-fi-latin1: Finnish for Sun Type 5 (Latin-1)
+sunt5-fr-latin1: French for Sun Type 5 (Latin-1)
+sunt5-ru: Russian for Sun Type 5
+sunt5-uk: UK for Sun Type 5
+sunt5-us-cz: Czech-US for Sun Type 5
+sunt6-uk: UK for Sun Type 6
+sv-latin1: Swedish (Latin-1)
+tj_alt-UTF8: Tajik alternative (UTF-8)
+tralt: Turkish alternative
+trf: Turkish F-layout
+trf-fgGIod: Turkish F-layout variant
+tr_f-latin5: Turkish F-layout (Latin-5)
+trq: Turkish Q-layout
+tr_q-latin5: Turkish Q-layout (Latin-5)
+ttwin_alt-UTF-8: Tatar for Windows alternative (UTF-8)
+ttwin_cplk-UTF-8: Tatar for Windows (Capslock, UTF-8)
+ttwin_ctrl-UTF-8: Tatar for Windows (Control, UTF-8)
+ttwin_ct_sh-UTF-8: Tatar for Windows (Control-Shift, UTF-8)
+ua: Ukrainian
+ua-cp1251: Ukrainian (CP1251)
+ua-utf: Ukrainian (UTF-8)
+ua-utf-ws: Ukrainian for Windows (UTF-8)
+ua-ws: Ukrainian for Windows
+uk: United Kingdom
+unicode: Unicode enhanced
+us: US
+us1: US alternative
+us-acentos: US with Spanish accents
+wangbe: Belgian for Wang
+wangbe2: Belgian for Wang alternative
+windowkeys: Windows keys enhanced

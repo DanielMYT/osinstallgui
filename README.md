@@ -117,6 +117,26 @@ can either edit the file directly in the source tree, or edit it after it has
 been installed (see the **Installation** section above). Note that ALL options
 must be set; osinstaller will refuse to run if any are missing.
 
+# Desktop Integration
+An example desktop file is provided in this source tree, but it does not get
+installed by default. To integrate properly into a desktop environment, you
+should customise the **osinstallgui.desktop.example** file, and replace the
+placeholders (i.e., the name of the distro and the distro's logo/icon) so it
+represents your distro.
+
+Once you've customised this file, it obviously needs to be renamed as
+**osinstallgui.desktop** (removing the **.example** extension), and then it can
+be installed in one or both of the following places:
+
+- **/usr/share/applications** - In the system application list.
+- **/home/\<name-of-live-user>/Desktop** - On the desktop of the live system.
+
+Note that you should not modify the `pkexec` command listed in the desktop
+entry file. It is written this way to ensure the programs runs successfully.
+Unlike `sudo`, which would have no problem, `pkexec` does not correctly run GUI
+programs as root unless the `DISPLAY` and `XAUTHORITY` environment variables
+explicitly preserved.
+
 # Troubleshooting
 If something goes wrong during the installation, it's very possible that it was
 caused by misconfiguration. When a problem occurs, the utility will inform you

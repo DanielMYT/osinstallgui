@@ -1058,7 +1058,7 @@ touch "$log"
 
 # Ensure we are running as root.
 if test $EUID -ne 0; then
-  die "$inv must be run as root (use 'pkexec' or 'sudo')."
+  die "$inv must be run as root (use 'sudo')."
 fi
 
 # Ensure the global config file exists, and source it if it does.

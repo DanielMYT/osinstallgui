@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Install <Your Distro Name Here>
+Type=Application
+Comment=Install <Your Distro Name Here> onto your system
+Exec=pkexec env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" osinstallgui
+Icon=</path/to/your/distro/logo>
+Terminal=false
+Categories=System;Utility
+Path=
+StartupNotify=false

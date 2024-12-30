@@ -77,30 +77,30 @@ First, you have to prepare the program for installation. This is because in its
 default state from the source tree, it is not configured to understand where to
 search for its configuration and data files. You can prepare it by running the
 following command:
-```sh
+```
 make
 ```
 By default, this will set the directory for config and data to
 `/usr/share/osinstallgui`. If this is undesired, you can customise it by
 instead using the following command:
-```sh
+```
 make DATADIR=/path/to/custom/datadir
 ```
 After the program is prepared, it can be installed with the following command,
 which may require root privileges depending on your environment:
-```sh
+```
 make install
 ```
 If you customised the data directory as mentioned above, then instead run the
 following command to ensure the files get installed in the same place:
-```sh
+```
 make DATADIR=/path/to/custom/datadir install
 ```
 You may also wish to customise where the binary gets installed (the default
 location is `/usr/bin`). Note that this option only needs to be passed during
 installation, and doesn't need to be set during the preparation stage. It can
 be set instead of or as well as the DATADIR option:
-```sh
+```
 make BINDIR=/path/to/custom/bindir DATADIR=/path/to/custom/datadir install
 ```
 If creating a distro package, then you can also use the `DESTDIR` option as you
@@ -124,6 +124,14 @@ should customise the **osinstallgui.desktop.example** file, and replace the
 placeholders (i.e., the name of the distro and the distro's logo/icon) so it
 represents your distro.
 
+**NOTE:** You also need to replace the `<user>` placeholder in the `Exec=` line
+in order for the program to launch properly. It should be set to the username
+of the Live CD user. For example, the full line might look like this when
+edited:
+```
+Exec=pkexec env DISPLAY=":0" XAUTHORITY="/home/massos/.Xauthority" osinstallgui
+```
+
 Once you've customised this file, it obviously needs to be renamed as
 **osinstallgui.desktop** (removing the **.example** extension), and then it can
 be installed in one or both of the following places:
@@ -131,11 +139,12 @@ be installed in one or both of the following places:
 - **/usr/share/applications** - In the system application list.
 - **/home/\<name-of-live-user>/Desktop** - On the desktop of the live system.
 
-Note that you should not modify the `pkexec` command listed in the desktop
-entry file. It is written this way to ensure the programs runs successfully.
-Unlike `sudo`, which would have no problem, `pkexec` does not correctly run GUI
-programs as root unless the `DISPLAY` and `XAUTHORITY` environment variables
-explicitly preserved.
+Note that the `pkexec` command listed in the desktop entry file is written in
+such a way to ensure the program runs successfully. Unlike `sudo`, which would
+respect the user's environment variables, `pkexec` does not. As a result, GUI
+programs will not correctly run as root unless the `DISPLAY` and `XAUTHORITY`
+environment variables are manually set. This is why a modification is required
+as described above.
 
 # Troubleshooting
 If something goes wrong during the installation, it's very possible that it was

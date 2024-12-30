@@ -72,6 +72,7 @@ dvorak-ukp: UK Dvorak programmer's
 emacs: Emacs-optimized
 emacs2: Emacs-optimized alternative
 en: English
+en-latin9: English (Latin-9)
 es: Spanish
 es-cp850: Spanish (CP850)
 es-olpc: Spanish for OLPC
@@ -162,6 +163,7 @@ pl1: Polish alternative 1
 pl2: Polish alternative 2
 pl3: Polish alternative 3
 pl4: Polish alternative 4
+pt: Portuguese
 pt-latin1: Portuguese (Latin-1)
 pt-latin9: Portuguese (Latin-9)
 pt-olpc: Portuguese for OLPC

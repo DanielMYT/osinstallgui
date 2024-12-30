@@ -938,7 +938,7 @@ stage_systemconfig() {
   # Set up the root password, if root password is required.
   if test "$OSINSTALLGUI_ROOTPW" = "1"; then
     write_log "Setting the root password using chpasswd."
-    if ! echo "root:$tgtrootpw" | chpasswd -R "$tgtpath" &>>"$log"; then
+    if ! echo "root:$tgtrootpw" | chpasswd -R "$tgtpath" -c YESCRYPT &>>"$log"; then
       # Warn about it being unsuccessful.
       write_log "Failed to set the root password."
       yad_message "Error" "The root password could not be set on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
@@ -970,7 +970,7 @@ stage_systemconfig() {
   fi
   # Set the password for the user account.
   write_log "Setting password for $tgtusername using chpasswd."
-  if ! echo "$tgtusername:$tgtuserpw" | chpasswd -R "$tgtpath" &>>"$log"; then
+  if ! echo "$tgtusername:$tgtuserpw" | chpasswd -R "$tgtpath" -c YESCRYPT &>>"$log"; then
     # Warn about it being unsuccessful.
     write_log "Failed to set password for $tgtusername."
     yad_message "Error" "The passwd for '$tgtusername' could not be set on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."

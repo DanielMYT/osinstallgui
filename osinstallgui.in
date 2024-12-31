@@ -64,16 +64,6 @@ yad_menu() {
   local response="$(yad --list --title="$title" --text="$menu" --column="Option" --column="Description" "$@" --width=600 --height=300)"
   echo "$response"
 }
-yad_forcemenu() {
-  local title="$1 ⎯ $inv"
-  local menu="$2"
-  shift 2
-  local response
-  while test -z "$response"; do
-    response="$(yad --list --title="$title" --text="$menu" --column="Option" --column="Description" "$@" --width=600 --height=300)"
-  done
-  echo "$response"
-}
 yad_message() {
   yad --title="$1 ⎯ $inv" --text="$2" --width=600 --height=200 --button="OK":0
 }
@@ -86,7 +76,7 @@ yad_input() {
   local text="$2"
   # This is the only exception to disabling SC2155, but we deal with it.
   local response
-  response="$(yad --entry --title="$title" --text="$text" --width=600 --height=200 --button="OK":0)"
+  response="$(yad --entry --title="$title" --text="$text" --width=600 --height=100 --button="OK":0)"
   local status=$?
   echo "$response"
   return $status
@@ -96,7 +86,7 @@ yad_password() {
   local text="$2"
   # This is the only exception to disabling SC2155, but we deal with it.
   local response
-  response="$(yad --entry --title="$title" --text="$text" --hide-text --width=600 --height=200 --button="OK":0)"
+  response="$(yad --entry --title="$title" --text="$text" --hide-text --width=600 --height=100 --button="OK":0)"
   local status=$?
   echo "$response"
   return $status
@@ -187,26 +177,9 @@ helper_chroot_advanced() {
   return $chrootstatus
 }
 
-# Stage functions.
-stage_mainmenu() {
-  # Let the user choose what they want to do on the main menu.
-  local choice="$(yad_menu "Main Menu" "Welcome to $osname! What would you like to do?" \
-  "Install" "Begin the installation of $osname onto your system." \
-  "About" "See information about this installation program." \
-  "Restart" "Restart the system." \
-  "Shutdown" "Shut down the system." \
-  "Exit" "Exit this installation program.")"
-  case "${choice%%|*}" in
-    "Install") export stage=1 ;;
-    "About") yad_message "About" "This is osinstallgui version $ver, running on $osname, accessing data from @@CONFPATH@@.\n\nosinstallgui is a full rewrite of the installation program originally from MassOS, now yad-based (GTK3 GUI) as opposed to dialog-based (Ncurses TUI). It has also been redesigned from the ground-up to be more distribution-independent, and now uses much more robust state-machine-based logic under the hood.\n\nosinstallgui was created by Daniel Massey, and is licensed under the GNU General Public License version 3 or later. More information about the project, along with its source code, can be found at <a href='https://github.com/DanielMYT/osinstallgui'>https://github.com/DanielMYT/osinstallgui</a>." ;;
-    "Restart") shutdown -r now ;;
-    "Shutdown") shutdown -h now ;;
-    "Exit"|"") exit 0 ;;
-  esac
-}
-stage_locale() {
+# Preloader function - finds locales/keymaps now to prevent slowdown later.
+preloader() {
   # Set up the list of locales, as well as the list of the most common ones.
-  local locales=() localescore=()
   # Acceptable core locales - searched locales will be matched against this.
   local localescorelist="de_DE.UTF-8 el_GR.UTF-8 en_GB.UTF-8 en_US.UTF-8 es_ES.UTF-8 es_MX.UTF-8 fr_FR.UTF-8 it_IT.UTF-8 ro_RO.UTF-8 ru_RU.UTF-8 pl_PL.UTF-8 pt_BR.UTF-8 pt_PT.UTF-8 sv_SE.UTF-8"
   # Get a list of locales from the locales file.
@@ -232,6 +205,55 @@ stage_locale() {
       done
     fi
   done < "$OSINSTALLGUI_LOCALES_FILE"
+  # Get a list of all supported keymaps.
+  if test "$OSINSTALLGUI_KEYMAPS_SYSTEMD" = "1" && which localectl &>/dev/null; then
+    # Use the systemd method (localectl).
+    local keymapsavailable=($(localectl list-keymaps | sort -u))
+  else
+    # Use the manual search method (messier and requires filtering).
+    local keymapsavailable=($(find /usr/share/keymaps -type f ! -name README.md ! -name \*.inc ! -name \*compose\* ! -name \*.m4 ! -name \*.doc -exec basename {} \; | sort -u | sed 's/.map.gz//'))
+  fi
+  # Define the core keymaps - the most common ones, similar to as above.
+  local keymapscommon="de el es fr it pl pt ro ru sv uk us"
+  # Get descriptions for each keymap.
+  for keymap in "${keymapsavailable[@]}"; do
+    # Cross-reference the keymap descriptions data file.
+    local keymapdesc="$(grep -sm1 "^$keymap:" "@@CONFPATH@@"/data/keymaps.desc | cut -d' ' -f2-)"
+    if test -z "$keymapdesc"; then
+      # Either the keymaps.desc file was missing or no match was found.
+      keymapdesc="UNKNOWN"
+    fi
+    # Add both the keymap name and its description to the list.
+    keymaps+=("$keymap" "$keymapdesc")
+    # If it should be in the core list, add it to that.
+    for corekeymap in $keymapscommon; do
+      if test "$corekeymap" = "$keymap"; then
+        keymapscore+=("$keymap" "$keymapdesc")
+      fi
+    done
+  done
+  # Export all variables from this preloader function.
+  export locales localescore keymaps keymapscore
+}
+
+# Stage functions.
+stage_mainmenu() {
+  # Let the user choose what they want to do on the main menu.
+  local choice="$(yad_menu "Main Menu" "Welcome to $osname! What would you like to do?" \
+  "Install" "Begin the installation of $osname onto your system." \
+  "About" "See information about this installation program." \
+  "Restart" "Restart the system." \
+  "Shutdown" "Shut down the system." \
+  "Exit" "Exit this installation program.")"
+  case "${choice%%|*}" in
+    "Install") export stage=1 ;;
+    "About") yad_message "About" "This is osinstallgui version $ver, running on $osname, accessing data from @@CONFPATH@@.\n\nosinstallgui is a full rewrite of the installation program originally from MassOS, now yad-based (GTK3 GUI) as opposed to dialog-based (Ncurses TUI). It has also been redesigned from the ground-up to be more distribution-independent, and now uses much more robust state-machine-based logic under the hood.\n\nosinstallgui was created by Daniel Massey, and is licensed under the GNU General Public License version 3 or later. More information about the project, along with its source code, can be found at <a href='https://github.com/DanielMYT/osinstallgui'>https://github.com/DanielMYT/osinstallgui</a>." ;;
+    "Restart") shutdown -r now ;;
+    "Shutdown") shutdown -h now ;;
+    "Exit"|"") exit 0 ;;
+  esac
+}
+stage_locale() {
   # Ask the user to select a core locale, or "Other" for all locales.
   local choice="$(yad_menu "Language Setup" "Please select the locale which corresponds to your preferred language. Choose 'Other' to see all locales." "${localescore[@]}" "Other" "Show all available locales")"
   choice="${choice%%|*}"
@@ -253,34 +275,6 @@ stage_locale() {
   export stage=2
 }
 stage_keymap() {
-  # Get a list of all supported keymaps.
-  if test "$OSINSTALLGUI_KEYMAPS_SYSTEMD" = "1" && which localectl &>/dev/null; then
-    # Use the systemd method (localectl).
-    local keymapsavailable=($(localectl list-keymaps | sort -u))
-  else
-    # Use the manual search method (messier and requires filtering).
-    local keymapsavailable=($(find /usr/share/keymaps -type f ! -name README.md ! -name \*.inc ! -name \*compose\* ! -name \*.m4 ! -name \*.doc -exec basename {} \; | sort -u | sed 's/.map.gz//'))
-  fi
-  # Define the core keymaps - the most common ones, similar to as above.
-  local keymapscommon="de el es fr it pl pt ro ru sv uk us"
-  # Get descriptions for each keymap.
-  local keymaps=() keymapscore=()
-  for keymap in "${keymapsavailable[@]}"; do
-    # Cross-reference the keymap descriptions data file.
-    local keymapdesc="$(grep -sm1 "^$keymap:" "@@CONFPATH@@"/data/keymaps.desc | cut -d' ' -f2-)"
-    if test -z "$keymapdesc"; then
-      # Either the keymaps.desc file was missing or no match was found.
-      keymapdesc="UNKNOWN"
-    fi
-    # Add both the keymap name and its description to the list.
-    keymaps+=("$keymap" "$keymapdesc")
-    # If it should be in the core list, add it to that.
-    for corekeymap in $keymapscommon; do
-      if test "$corekeymap" = "$keymap"; then
-        keymapscore+=("$keymap" "$keymapdesc")
-      fi
-    done
-  done
   # Ask the user to select a core keymap, or "Other" for all keymaps.
   local choice="$(yad_menu "Keyboard Setup" "Please select the keymap which corresponds to your preferred keyboard layout. Choose 'Other' to see all keymaps." "${keymapscore[@]}" "Other" "Show all available keymaps")"
   choice="${choice%%|*}"
@@ -602,13 +596,13 @@ stage_partition() {
       fi
       # Format partitions.
       if test $btrfsuse -eq 1; then
-        helper_format "$tgtroot" btrfs "$osname"
+        helper_format "$tgtroot" btrfs "$(echo "$osname" | cut -d' ' -f1)"
         if test $? -ne 0; then
           yad_message "Error" "Failed to format the root filesystem $tgtroot as btrfs. A log file can be found at $log."
           return
         fi
       else
-        helper_format "$tgtroot" ext4 "$osname"
+        helper_format "$tgtroot" ext4 "$(echo "$osname" | cut -d' ' -f1)"
         if test $? -ne 0; then
           yad_message "Error" "Failed to format the root filesystem $tgtroot as ext4. A log file can be found at $log."
           return
@@ -702,7 +696,7 @@ stage_partition() {
       if { test $efimode -eq 1 && test ! -z "${diskparts[2]}"; } || { test $efimode -eq 0 && test ! -z "${diskparts[1]}"; }; then
         if yad_prompt "Partition Setup" "Swap is a reserved area on the disk which can be used to prevent the system from crashing if it runs out of memory. Do you have a swap partition on the disk $tgtdisk you would like to use?"; then
           swapuse=1
-          local choiceswappar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for swap. It must be DIFFERENT from your selections for the root partition and EFI system partition (if applicable)." "${diskparts[@]}")"
+          local choiceswappar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for swap. It must be DIFFERENT from your selections for the root partition and EFI system partition (if applicable)." "${partentries[@]}")"
           test ! -z "$choiceswappar" || return
           local swapparselection="${choiceswappar%%|*}"
           # The swap partition cannot be the same as any other partition.
@@ -835,7 +829,8 @@ stage_installation() {
   if test "$(file -b "$OSINSTALLGUI_ROOTFS" | cut -d' ' -f1)" = "Squashfs"; then
     # Unsquash the image.
     write_log "Unsquashing $OSINSTALLGUI_ROOTFS to $tgtpath."
-    unsquashfs -f -q -d "$tgtpath" "$OSINSTALLGUI_ROOTFS" &>>"$log"
+    # Unsquash with percentage and pipe to yad for progress bar.
+    unsquashfs -f -q -percentage -d "$tgtpath" "$OSINSTALLGUI_ROOTFS" 2>>"$log" | yad --progress --title="Installation" --text="The installation of $osname is in progress. Please be patient while the system is being installed." --percentage=0 --auto-close --no-buttons --no-escape --width=600 --height=100
     if test $? -ne 0; then
       write_log "Failed to unsquash $OSINSTALLGUI_ROOTFS to $tgtpath."
       yad_message "Error" "The installation process did not complete successfully (unsquashfs operation failed). A log file can be found at $log."
@@ -847,6 +842,7 @@ stage_installation() {
   else
     # Untar the image.
     write_log "Untarring $OSINSTALLGUI_ROOTFS to $tgtpath."
+    # TODO: Make a percentage progress bar for tar, not just squashfs.
     tar -xpf "$OSINSTALLGUI_ROOTFS" -C "$tgtpath" &>>"$log"
     if test $? -ne 0; then
       write_log "Failed to untar $OSINSTALLGUI_ROOTFS to $tgtpath."
@@ -982,9 +978,11 @@ stage_systemconfig() {
 }
 stage_initramfs() {
   # Generate an initramfs for the target system.
-  # TODO: Display a window while it's being generated, to avoid confusion.
   write_log "Generating an initramfs for the target system."
-  if ! helper_chroot_advanced "$tgtpath" $OSINSTALLGUI_INITRAMFS_CMD; then
+  # Pipe to yad to show something is happening.
+  # Progress bar is needed even though the initramfs command doesn't use progress.
+  helper_chroot_advanced "$tgtpath" $OSINSTALLGUI_INITRAMFS_CMD &>>"$log" | yad --progress --title="Installation" --text="Generating an initramfs for the target system, please wait (progress will display 0% until complete)." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100
+  if test $? -ne 0; then
     # OH NO! Something went horribly wrong. Report the error.
     write_log "Failed to generate an initramfs for the target system."
     yad_message "Error" "Failed to generate an initramfs for the target system. The installation process will continue anyway, however it is VERY LIKELY that the target system will FAIL TO BOOT, and manual intervention will be needed after the installation. A log file can be found at $log."
@@ -1116,6 +1114,12 @@ fi
 
 # Set the current stage we are on.
 export stage=0
+
+# Export variables that will be set by preloader.
+export locales=() localescore=() keymaps=() keymapscore=()
+
+# Run preloader function to get locales, keymaps and timezones.
+preloader
 
 # Enter the main program loop.
 while test $stage -ge 0; do

@@ -742,13 +742,13 @@ stage_partition() {
       export tgtroot="$rootparselection" tgtefi="$efiparselection" tgtswap="$swapparselection"
       # Format partitions as required.
       if test $btrfsuse -eq 1; then
-        helper_format "$tgtroot" btrfs "$osname"
+        helper_format "$tgtroot" btrfs "$(echo "$osname" | cut -d' ' -f1)"
         if test $? -ne 0; then
           yad_message "Error" "Failed to format the root filesystem $tgtroot as btrfs. A log file can be found at $log."
           return
         fi
       else
-        helper_format "$tgtroot" ext4 "$osname"
+        helper_format "$tgtroot" ext4 "$(echo "$osname" | cut -d' ' -f1)"
         if test $? -ne 0; then
           yad_message "Error" "Failed to format the root filesystem $tgtroot as ext4. A log file can be found at $log."
           return

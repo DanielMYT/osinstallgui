@@ -943,7 +943,7 @@ stage_systemconfig() {
     fi
   fi
   # Set up the new primary user account - depending on whether fullname is set.
-  if test ! -z "$fullname"; then
+  if test ! -z "$tgtfullname"; then
     # Fullname is set.
     write_log "Creating account for $tgtusername ($tgtfullname) using useradd."
     if ! useradd -R "$tgtpath" -c "$tgtfullname" -G "$OSINSTALLGUI_ADMIN_GROUP" -ms "$OSINSTALLGUI_USER_SHELL" "$tgtusername" &>>"$log"; then

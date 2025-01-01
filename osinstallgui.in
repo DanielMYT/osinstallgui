@@ -830,7 +830,7 @@ stage_installation() {
     # Unsquash the image.
     write_log "Unsquashing $OSINSTALLGUI_ROOTFS to $tgtpath."
     # Unsquash with percentage and pipe to yad for progress bar.
-    unsquashfs -f -q -percentage -d "$tgtpath" "$OSINSTALLGUI_ROOTFS" 2>>"$log" | yad --progress --title="Installation" --text="The installation of $osname is in progress. Please be patient while the system is being installed." --percentage=0 --auto-close --no-buttons --no-escape --width=600 --height=100
+    unsquashfs -f -q -percentage -d "$tgtpath" "$OSINSTALLGUI_ROOTFS" 2>>"$log" | yad --progress --title="Installation ⎯ $inv" --text="The installation of $osname is in progress. Please be patient while the system is being installed." --percentage=0 --auto-close --no-buttons --no-escape --width=600 --height=100
     if test $? -ne 0; then
       write_log "Failed to unsquash $OSINSTALLGUI_ROOTFS to $tgtpath."
       yad_message "Error" "The installation process did not complete successfully (unsquashfs operation failed). A log file can be found at $log."
@@ -872,7 +872,7 @@ stage_postinstall() {
     # Run the script.
     write_log "Running the rootfs cleanup script $OSINSTALLGUI_CLEANUP_CMD."
     # Try to run the script.
-    if ! helper_chroot_advanced "$tgtpath" "$OSINSTALLGUI_CLEANUP_CMD" &>>"$log"; then
+    if ! helper_chroot_advanced "$tgtpath" "$OSINSTALLGUI_CLEANUP_CMD"; then
       # Warn about it exiting unsuccessfully. But again still continue.
       write_log "The rootfs cleanup script did not complete successfully."
       yad_message "Error" "The rootfs cleanup script did not complete successfully. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
@@ -906,7 +906,7 @@ stage_systemconfig() {
   sed -i "s/#$tgtlocale/$tgtlocale/" "$tgtpath/$OSINSTALLGUI_LOCALES_FILE"
   # Generate the locales using a chroot environment.
   write_log "Generating locales in chroot using $OSINSTALLGUI_LOCALES_CMD."
-  if ! helper_chroot_advanced "$tgtpath" "$OSINSTALLGUI_LOCALES_CMD" &>>"$log"; then
+  if ! helper_chroot_advanced "$tgtpath" "$OSINSTALLGUI_LOCALES_CMD"; then
     # Warn about it being unsuccessful.
     write_log "$OSINSTALLGUI_LOCALES_CMD failed to generate locales."
     yad_message "Error" "The locales could not be successfully generated on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found $log."
@@ -924,7 +924,7 @@ stage_systemconfig() {
   # Update the hardware clock.
   # TODO: Allow localtime instead of UTC, for some distros which prefer that.
   write_log "Updating hardware clock in chroot environment."
-  if ! helper_chroot_advanced "$tgtpath" /usr/bin/env hwclock -v --systohc &>>"$log"; then
+  if ! helper_chroot_advanced "$tgtpath" /usr/bin/env hwclock -v --systohc; then
     # Warn about it being unsuccessful.
     write_log "Failed to update hardware clock in chroot environment."
     yad_message "Error" "The hardware clock could not be updated correctly on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found $log."
@@ -979,10 +979,18 @@ stage_systemconfig() {
 stage_initramfs() {
   # Generate an initramfs for the target system.
   write_log "Generating an initramfs for the target system."
-  # Pipe to yad to show something is happening.
-  # Progress bar is needed even though the initramfs command doesn't use progress.
-  helper_chroot_advanced "$tgtpath" $OSINSTALLGUI_INITRAMFS_CMD &>>"$log" | yad --progress --title="Installation" --text="Generating an initramfs for the target system, please wait (progress will display 0% until complete)." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100
-  if test $? -ne 0; then
+  # Pipe to yad to show something is happening (because it can take a while).
+  # Without this, the program would appear closed which could confuse users.
+  local initramfsstatus
+  {
+    # Won't be any visual progress indicator, but still try to log output.
+    helper_chroot_advanced "$tgtpath" $OSINSTALLGUI_INITRAMFS_CMD
+    # Get status from this command for output.
+    initramfsstatus=$?
+    # Tell yad that it is now at 100%, to finish the dialog.
+    echo "100"
+  } | yad --progress --title="Installation ⎯ $inv" --text="Generating an initramfs for the target system, please wait (progress will display 0% until complete)." --percentage=0 --auto-close --no-buttons --no-escape --width=600 --height=100
+  if test $initramfsstatus -ne 0; then
     # OH NO! Something went horribly wrong. Report the error.
     write_log "Failed to generate an initramfs for the target system."
     yad_message "Error" "Failed to generate an initramfs for the target system. The installation process will continue anyway, however it is VERY LIKELY that the target system will FAIL TO BOOT, and manual intervention will be needed after the installation. A log file can be found at $log."
@@ -1007,19 +1015,27 @@ stage_bootloader() {
   fi
   # Try to install the bootloader.
   write_log "Trying to install bootloader using 'grub-install $grub_args'."
-  if ! helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install $grub_args; then
-    # Complain about the problem.
+  # Fake progress bar, but at least a way to inform the user somehow.
+  local grubinstallstatus
+  local grubmkconfigstatus
+  {
+    # GRUB installation step.
+    helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install $grub_args
+    grubinstallstatus=$?
+    # Tell yad that we are half done.
+    echo "50"
+    # GRUB configuration step.
+    helper_chroot_advanced "$tgtpath" /usr/bin/env grub-mkconfig -o /boot/grub/grub.cfg
+    grubmkconfigstatus=$?
+    # Now tell yad that we are done.
+    echo "100"
+  } | yad --progress --title="Installation ⎯ $inv" --text="Installing the GRUB bootloader, please be patient." --percentage=0 --auto-close --no-buttons --no-escape --width=600 --height=100
+  if test $grubinstallstatus -ne 0 || test $grubmkconfigstatus -ne 0; then
+    # Something went wrong, complain about the problem.
     write_log "Bootloader installation using 'grub-install $grub_args' failed."
     yad_message "Error" "The GRUB bootloader installation failed. Manual intervention will likely be needed to correct this problem and make your system bootable. A log file can be found at $log."
   else
     write_log "Bootloader installation using 'grub-install $grub_args' succeeded."
-  fi
-  # Try to generate the grub configuration file.
-  write_log "Trying to generate GRUB configuration file using 'grub-mkconfig'."
-  if ! helper_chroot_advanced "$tgtpath" /usr/bin/env grub-mkconfig -o /boot/grub/grub.cfg; then
-    # Complain about the problem.
-    write_log "Bootloader configuration using 'grub-mkconfig' failed."
-    yad_message "Error" "The GRUB bootloader configuration failed. Manual intervention will likely be needed to correct this problem and make your system bootable. A log file can be found at $log."
   fi
   # Go to the final stage.
   export stage=15

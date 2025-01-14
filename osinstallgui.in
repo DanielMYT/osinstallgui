@@ -486,6 +486,16 @@ stage_disk() {
   local mountedparts="$(mount | grep "$diskselection" | cut -d' ' -f1,3 | sort -rk2 | cut -d' ' -f1)"
   # Allow us to try and unmount them if any exist.
   if test ! -z "$mountedparts"; then
+    # Ensure this disk is not the installation media.
+    # TODO: Support non-dracut initramfs (or just detect in a better way).
+    for part in $mountedparts; do
+      if test "$(mount | grep "$part" | cut -d' ' -f3)" = "/run/initramfs/live"; then
+        # Complain and return.
+        yad_message "Error" "It is not possible to install $osname to the same disk as the one which contains the installation media. Please choose a different disk."
+        return
+      fi
+    done
+    # Let the user decide if they want to try to unmount the partitions.
     if yad_prompt "Warning" "The selected disk appears to have mounted partitions. In order to use it for the installation, all partitions must first be unmounted. Do you want this program to try and unmount them for you?"; then
       # Try to unmount each partition. Sort was done because we can't use -R.
       for part in $mountedparts; do

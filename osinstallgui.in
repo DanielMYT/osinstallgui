@@ -1071,7 +1071,7 @@ stage_finish() {
 export stamp="$(date "+%Y%m%d%H%M%S%N")"
 
 # Determine our host's name.
-export osname="$(cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2 | sed 's/"//g')"
+export osname="$(grep -sm1 "^PRETTY_NAME=" /etc/os-release | cut -d= -f2 | sed 's/"//g')"
 if test -z "$osname"; then
   export osname="an OS with no name"
 fi

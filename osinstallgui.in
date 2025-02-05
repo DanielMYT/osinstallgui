@@ -79,9 +79,10 @@ yad_prompt() {
 yad_input() {
   local title="$1 ⎯ $inv"
   local text="$2"
+  local placeholder="$3"
   # This is the only exception to disabling SC2155, but we deal with it.
   local response
-  response="$(yad --entry --title="$title" --text="$text" --width=600 --height=100 --button="OK":0)"
+  response="$(yad --entry --title="$title" --text="$text" --entry-text="$placeholder" --width=600 --height=100 --button="OK":0)"
   local status=$?
   echo "$response"
   return $status
@@ -456,6 +457,34 @@ stage_userpw() {
   export tgtuserpw="$userpw1"
   export stage=7
 }
+stage_hostname() {
+  # The default hostname will be in the format 'username-SystemModel'.
+  # We will use dmidecode to find the model, if possible, or fallback to 'PC'.
+  # We will also strip out non-alphanumeric/non-space/non-dash characters.
+  # And then we will replace all spaces with dashes.
+  # This is to be compliant with the hostname requirements.
+  local defaulthostname="$tgtusername-$({ dmidecode -s system-product-name 2>/dev/null || echo "PC"; } | tr -cd '[:alnum:] [:space:] -' | sed 's/ /-/g')"
+  # Collect the input using the default hostname as the default/placeholder.
+  local hostname
+  hostname="$(yad_input "Hostname" "Please enter your desired hostname which will identify this computer to the network." "$defaulthostname")"
+  # Go back if the user backed out.
+  if test $? -ne 0; then
+    export stage=6
+    return
+  fi
+  # Ensure the hostname is not empty.
+  if test -z "$hostname"; then
+    # Complain and try again.
+    yad_message "Error" "The system hostname must not be left blank."
+    return
+  fi
+  # Save our work and also filter like we did for the default hostname before.
+  # This time we also need to truncate to 255 characters, due to the limit.
+  export tgthostname="$(echo "$hostname" | tr -cd '[:alnum:] [:space:] -' | sed 's/ /-/g' | cut -c1-255)"
+  # Move on to the next stage.
+  export stage=8
+
+}
 stage_disk() {
   # Complain if there are no REAL disks on the system.
   if test -z "$(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort)"; then
@@ -478,7 +507,7 @@ stage_disk() {
   local choice="$(yad_menu "Disk Selection" "Please choose the disk you wish to use for the installation." "${diskentries[@]}")"
   # Go back to the previous stage if the user backed out.
   if test -z "$choice"; then
-    export stage=6
+    export stage=7
     return
   fi
   local diskselection="${choice%%|*}"
@@ -516,14 +545,14 @@ stage_disk() {
   # Set up this disk as the target disk for installation.
   export tgtdisk="$diskselection"
   # Move to the partitioning stage.
-  export stage=8
+  export stage=9
 }
 stage_partition() {
   # Ensure the disk still exists by this point.
   if test ! -b "$tgtdisk"; then
     # The disk is no longer valid (possibly got disconnected). Go back.
     yad_message "Error" "The disk you have selected no longer exists. Please ensure that it has not been disconnected from the system."
-    export stage=7
+    export stage=8
     return
   fi
   # Let the user decide how they want to partition the disk.
@@ -638,7 +667,7 @@ stage_partition() {
         fi
       fi
       # Proceed to the next stage.
-      export stage=9
+      export stage=10
       ;;
     "2")
       # Install the operating system to an existing partition on the disk.
@@ -784,7 +813,7 @@ stage_partition() {
         fi
       fi
       # Proceed to the next stage.
-      export stage=9
+      export stage=10
       ;;
     "3")
       # Manually partition the disk before installing.
@@ -802,7 +831,7 @@ stage_partition() {
       ;;
     "")
       # Go back to the previous stage.
-      export stage=7
+      export stage=8
       ;;
   esac
 }
@@ -810,7 +839,7 @@ stage_mount() {
   # Ensure we know which partitions we are working with.
   if test -z "$tgtroot"; then
     # Step back a stage, because we don't know what we are working with.
-    export stage=8
+    export stage=9
     return
   fi
   sync
@@ -818,18 +847,18 @@ stage_mount() {
   if ! helper_mount "$tgtroot" "$tgtpath"; then
     # Complain and go back to the disk setup stage.
     yad_message "Error" "Unable to mount the root partition $tgtroot. The installation cannot continue. A log file can be found at $log."
-    # TODO: Determine whether it would be better to return to 7 or 8.
-    export stage=7
+    # TODO: Determine whether it would be better to return to 8 or 9.
+    export stage=8
     return
   fi
   # Mount the EFI partition if needed.
   if test $efimode -eq 1 && ! helper_mount "$tgtefi" "$tgtpath/boot/efi"; then
     yad_message "Error" "Unable to mount the EFI system partition $tgtroot. The installation cannot continue. A log file can be found at $log."
-    export stage=7
+    export stage=8
     return
   fi
   # If we got through without issues, then lets begin the installation.
-  export stage=10
+  export stage=11
 }
 stage_installation() {
   # This is where the fun happens.
@@ -837,7 +866,7 @@ stage_installation() {
   sync
   if ! mount | grep "$tgtroot" &>/dev/null || { test $efimode -eq 1 && ! mount | grep "$tgtefi" &>/dev/null; }; then
     # Return to the mounting stage.
-    export stage=9
+    export stage=10
     return
   fi
   # Determine whether we are using a squashfs or tar image.
@@ -870,7 +899,7 @@ stage_installation() {
   fi
   sync
   # Now move to the post installation stage.
-  export stage=11
+  export stage=12
 }
 stage_postinstall() {
   # This stage only exists for running the specified rootfs cleanup script.
@@ -881,7 +910,7 @@ stage_postinstall() {
       # Warn about the problem, even though it is not fatal.
       yad_message "Error" "Cannot run the rootfs cleanup script because it does not exist or is not executable. This stage of the installation will therefore be skipped, which may cause the newly installed system to be tainted."
       # Move on to the next stage (system configuration) immediately.
-      export stage=12
+      export stage=13
       return
     fi
     # Run the script.
@@ -896,7 +925,7 @@ stage_postinstall() {
     fi
   fi
   # Go to the next stage, which will be the full system configuration.
-  export stage=12
+  export stage=13
 }
 stage_systemconfig() {
   # This stage is for configuring the system after the installation.
@@ -986,12 +1015,23 @@ stage_systemconfig() {
   if ! echo "$tgtusername:$tgtuserpw" | chpasswd -R "$tgtpath" -c YESCRYPT &>>"$log"; then
     # Warn about it being unsuccessful.
     write_log "Failed to set password for $tgtusername."
-    yad_message "Error" "The passwd for '$tgtusername' could not be set on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
+    yad_message "Error" "The password for '$tgtusername' could not be set on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
   else
     write_log "Successfully set password for $tgtusername"
   fi
+  # Set the hostname for the system.
+  write_log "Setting the system hostname to $tgthostname."
+  # Need to set in both /etc/hostname and /etc/hosts.
+  # For the latter, we match the line beginning with 127.0.1.1 and replace it.
+  if ! { echo "$tgthostname" > "$tgtpath"/etc/hostname && sed -i "s/^127\.0\.1\.1 .*/127.0.1.1 $tgthostname/" "$tgtpath"/etc/hosts; }; then
+    # Warn about it being unsuccessful.
+    write_log "Failed to set the system hostname to $tgthostname."
+    yad_message "Error" "The hostname for the system could not be set on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
+  else
+    write_log "Successfully set the system hostname to $tgthostname."
+  fi
   # Proceed to the next stage (initramfs generation).
-  export stage=13
+  export stage=14
 }
 stage_initramfs() {
   # Generate an initramfs for the target system.
@@ -1014,7 +1054,7 @@ stage_initramfs() {
     write_log "Successfully generated an initramfs for the target system."
   fi
   # Proceed to the penultimate stage (bootloader setup).
-  export stage=14
+  export stage=15
 }
 stage_bootloader() {
   # Install the bootloader on the target system.
@@ -1052,7 +1092,7 @@ stage_bootloader() {
     write_log "Bootloader installation using 'grub-install $grub_args' succeeded."
   fi
   # Go to the final stage.
-  export stage=15
+  export stage=16
 }
 stage_finish() {
   # Unmount all filesystems.
@@ -1129,7 +1169,7 @@ check_dep unsquashfs squashfs-tools
 export tgtdisk="" tgtroot="" tgtefi="" tgtswap=""
 
 # Other global setup variables which need to be accessed by the whole program.
-export tgtlocale="" tgtkeymap="" tgtrootpw="" tgtusername="" tgtfullname="" tgtuserpw=""
+export tgtlocale="" tgtkeymap="" tgtrootpw="" tgtusername="" tgtfullname="" tgtuserpw="" tgthostname=""
 
 # Set up the mount directory for the target system.
 export tgtpath="$workdir/target"
@@ -1162,14 +1202,15 @@ while test $stage -ge 0; do
     4) stage_rootpw ;;
     5) stage_usersetup ;;
     6) stage_userpw ;;
-    7) stage_disk ;;
-    8) stage_partition ;;
-    9) stage_mount ;;
-    10) stage_installation ;;
-    11) stage_postinstall ;;
-    12) stage_systemconfig ;;
-    13) stage_initramfs ;;
-    14) stage_bootloader ;;
-    15) stage_finish ;;
+    7) stage_hostname ;;
+    8) stage_disk ;;
+    9) stage_partition ;;
+    10) stage_mount ;;
+    11) stage_installation ;;
+    12) stage_postinstall ;;
+    13) stage_systemconfig ;;
+    14) stage_initramfs ;;
+    15) stage_bootloader ;;
+    16) stage_finish ;;
   esac
 done

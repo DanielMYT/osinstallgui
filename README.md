@@ -54,6 +54,9 @@ ENTIRE package, including its command-line utilities.
   present, the user will be given the choice as to whether they want to use
   ext4 or btrfs, unless `OSINSTALLGUI_ALLOW_BTRFS` is set to `0` in the
   osinstallgui configuration file).
+- **dmidecode**, to allow the system model to be determined, for the default
+  hostname (if not present, "PC" will be used as a fallback, but the user can,
+  of course, still customise the hostname themselves and override the default).
 - **gparted**, to allow the user to manually create/modify partitions using
   this external program. The manual partitioning option will be unavailable if
   this is not present.

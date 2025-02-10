@@ -44,10 +44,12 @@ ENTIRE package, including its command-line utilities.
   mandatory for compatibility reasons).
 - **gptfdisk**, for the erase disk functionality.
 - **GRUB**, for the bootloader (installed on the target system).
+- **libxkbcommon**, for finding available X11 keyboard layouts.
 - **parted**, for the erase disk functionality.
 - **squashfs-tools**, for extracting rootfs images. Mandatory for compatibility
   reasons, even if a tar-based rootfs is used instead.
 - **yad**, for the GTK3 GUI.
+- **yq**, for finding available X11 keyboard layouts.
 
 ## Recommended dependencies
 - **btrfs-progs**, to allow the user to use btrfs for the root partition (if

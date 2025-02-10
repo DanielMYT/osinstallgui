@@ -25,8 +25,6 @@
 # We intentionally ignore return values from declarations in most cases.
 # shellcheck disable=SC2155
 
-# TODO: Find a way to fix SC2207 without shellcheck-disabling it.
-
 # What is our name, what is our version?
 export inv="$(basename "$0")"
 export ver="@@VERSION@@"
@@ -185,9 +183,15 @@ helper_chroot_advanced() {
 
 # Preloader function - finds locales/keymaps now to prevent slowdown later.
 preloader() {
+  # A progress bar is needed here, since preloading can take around 15 seconds.
+  # Unfortunately, the previous pipe method would cause variables to be lost.
+  # This new method involves using coproc, to avoid any piping or subshells.
+  # TODO: Make this the default elsewhere too.
+  coproc preloaderprogress { yad --progress --title="Loading... ⎯ $inv" --text="The installer is loading, please be patient." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100; }
   # Set up the list of locales, as well as the list of the most common ones.
+  write_log "Preloading locales."
   # Acceptable core locales - searched locales will be matched against this.
-  local localescorelist="de_DE.UTF-8 el_GR.UTF-8 en_GB.UTF-8 en_US.UTF-8 es_ES.UTF-8 es_MX.UTF-8 fr_FR.UTF-8 it_IT.UTF-8 ro_RO.UTF-8 ru_RU.UTF-8 pl_PL.UTF-8 pt_BR.UTF-8 pt_PT.UTF-8 sv_SE.UTF-8"
+  local localescorelist="de_DE.UTF-8 el_GR.UTF-8 en_GB.UTF-8 en_US.UTF-8 es_ES.UTF-8 es_MX.UTF-8 fr_FR.UTF-8 it_IT.UTF-8 pl_PL.UTF-8 pt_BR.UTF-8 pt_PT.UTF-8 ro_RO.UTF-8 ru_RU.UTF-8 sv_SE.UTF-8"
   # Get a list of locales from the locales file.
   while IFS= read -r line; do
     # Filter the line and then uncomment it.
@@ -211,13 +215,17 @@ preloader() {
       done
     fi
   done < "$OSINSTALLGUI_LOCALES_FILE"
+  write_log "Successfully preloaded locales."
+  echo "33" >&"${preloaderprogress[1]}"
   # Get a list of all supported keymaps.
+  write_log "Preloading console keymaps."
+  local keymapsavailable=()
   if test "$OSINSTALLGUI_KEYMAPS_SYSTEMD" = "1" && which localectl &>/dev/null; then
     # Use the systemd method (localectl).
-    local keymapsavailable=($(localectl list-keymaps | sort -u))
+    readarray -t keymapsavailable < <(localectl list-keymaps | sort -u)
   else
-    # Use the manual search method (messier and requires filtering).
-    local keymapsavailable=($(find /usr/share/keymaps -type f ! -name README.md ! -name \*.inc ! -name \*compose\* ! -name \*.m4 ! -name \*.doc -exec basename {} \; | sort -u | sed 's/.map.gz//'))
+    # Use the manual search method (slower and messier).
+    readarray -t keymapsavailable < <(find /usr/share/keymaps -type f ! -name README.md ! -name \*.inc ! -name \*compose\* ! -name \*.m4 ! -name \*.doc -exec basename {} \; | sort -u | sed 's/.map.gz//')
   fi
   # Define the core keymaps - the most common ones, similar to as above.
   local keymapscommon="de el es fr it pl pt ro ru sv uk us"
@@ -238,8 +246,53 @@ preloader() {
       fi
     done
   done
+  write_log "Successfully preloaded console keymaps."
+  echo "66" >&"${preloaderprogress[1]}"
+  # Get a list of all supported X11 keymaps (layouts, variants, descriptions).
+  write_log "Preloading X11 keymaps."
+  local x11layouts=() x11variants=() x11descriptions=()
+  # Set up the core values.
+  local x11keyscorelist="de es fr gb gr it pl pt ro ru se us"
+  # Need to write to temporary files because reading from pipe fails.
+  xkbcli list | yq -o shell '.layouts[]' | grep '^layout=' | sed 's/^layout=//' > "$workdir"/.x11l
+  xkbcli list | yq -o shell '.layouts[]' | grep '^variant=' | sed 's/^variant=//' | sed "s/'//g" > "$workdir"/.x11v
+  xkbcli list | yq -o shell '.layouts[]' | grep '^description=' | sed 's/^description=//' | sed "s/'//g" > "$workdir"/.x11d
+  # Read back the temporary files into the arrays.
+  while IFS= read -r line; do
+    x11layouts+=("$line")
+  done < "$workdir"/.x11l
+  while IFS= read -r line; do
+    x11variants+=("$line")
+  done < "$workdir"/.x11v
+  while IFS= read -r line; do
+    x11descriptions+=("$line")
+  done < "$workdir"/.x11d
+  # Remove temporary files now they are no longer needed.
+  rm -f "$workdir"/.x11{l,v,d}
+  # Remove last value from each array due to it being the 'custom' entry.
+  unset "x11layouts[-1]" "x11variants[-1]" "x11descriptions[-1]"
+  # Now prepare in a yad-friendly format ("layout_variant" "description").
+  # Underscore is useful for displaying to user, and we can manually handle it.
+  # Loop through in index mode because we also need to access other arrays.
+  for x11index in "${!x11layouts[@]}"; do
+    # If variant is empty, only add the layout. Otherwise add both.
+    if test -z "${x11variants[x11index]}"; then
+      x11keys+=("${x11layouts[x11index]}" "${x11descriptions[x11index]}")
+      # If it should be in the core list, also add it to that.
+      # Note that only non-variant ones are in the core list.
+      for corex11map in $x11keyscorelist; do
+        if test "$corex11map" = "${x11layouts[x11index]}"; then
+          x11keyscore+=("${x11layouts[x11index]}" "${x11descriptions[x11index]}")
+        fi
+      done
+    else
+      x11keys+=("${x11layouts[x11index]}_${x11variants[x11index]}" "${x11descriptions[x11index]}")
+    fi
+  done
+  write_log "Successfully preloaded X11 keymaps."
+  echo "100" >&"${preloaderprogress[1]}"
   # Export all variables from this preloader function.
-  export locales localescore keymaps keymapscore
+  export locales localescore keymaps keymapscore x11keys x11keyscore
 }
 
 # Stage functions.
@@ -253,7 +306,7 @@ stage_mainmenu() {
   "Exit" "Exit this installation program.")"
   case "${choice%%|*}" in
     "Install") export stage=1 ;;
-    "About") yad_message "About" "This is osinstallgui version $ver, running on $osname, accessing data from @@CONFPATH@@.\n\nosinstallgui is a full rewrite of the installation program originally from MassOS, now yad-based (GTK3 GUI) as opposed to dialog-based (Ncurses TUI). It has also been redesigned from the ground-up to be more distribution-independent, and now uses much more robust state-machine-based logic under the hood.\n\nosinstallgui was created by Daniel Massey, and is licensed under the GNU General Public License version 3 or later. More information about the project, along with its source code, can be found at <a href='https://github.com/DanielMYT/osinstallgui'>https://github.com/DanielMYT/osinstallgui</a>." ;;
+    "About") yad_message "About" "This is osinstallgui version $ver, running on $osname, accessing data from @@CONFPATH@@, and working out of the directory $workdir.\n\nosinstallgui is a full rewrite of the installation program originally from MassOS, now yad-based (GTK3 GUI) as opposed to dialog-based (Ncurses TUI). It has also been redesigned from the ground-up to be more distribution-independent, and now uses much more robust state-machine-based logic under the hood.\n\nosinstallgui was created by Daniel Massey, and is licensed under the GNU General Public License version 3 or later. More information about the project, along with its source code, can be found at <a href='https://github.com/DanielMYT/osinstallgui'>https://github.com/DanielMYT/osinstallgui</a>." ;;
     "Restart") shutdown -r now ;;
     "Shutdown") shutdown -h now ;;
     "Exit"|"") exit 0 ;;
@@ -282,7 +335,7 @@ stage_locale() {
 }
 stage_keymap() {
   # Ask the user to select a core keymap, or "Other" for all keymaps.
-  local choice="$(yad_menu "Keyboard Setup" "Please select the keymap which corresponds to your preferred keyboard layout. Choose 'Other' to see all keymaps." "${keymapscore[@]}" "Other" "Show all available keymaps")"
+  local choice="$(yad_menu "Keyboard Setup" "Please select the console keymap which corresponds to your preferred keyboard layout. Choose 'Other' to see all keymaps." "${keymapscore[@]}" "Other" "Show all available keymaps and variants")"
   choice="${choice%%|*}"
   # Go back to the previous stage if the user backed out.
   if test -z "$choice"; then
@@ -292,7 +345,7 @@ stage_keymap() {
   # If the user selected "Other", then go to the submenu.
   if test "$choice" = "Other"; then
     # Ask the user to select from all possible keymaps.
-    choice="$(yad_menu "Keyboard Setup" "Please select the keymap which corresponds to your preferred keyboard layout. This is the list of all available keymaps." "${keymaps[@]}")"
+    choice="$(yad_menu "Keyboard Setup" "Please select the console keymap which corresponds to your preferred keyboard layout. This is the list of all available keymaps and variants." "${keymaps[@]}")"
     choice="${choice%%|*}"
     # Start keymap setup again if the user backed out of this submenu.
     test ! -z "$choice" || return
@@ -300,6 +353,27 @@ stage_keymap() {
   # Save the choice to the global configuration and move to the next stage.
   export tgtkeymap="$choice"
   export stage=3
+}
+stage_x11key() {
+  # Ask the user to select an X11 keymap.
+  local choice="$(yad_menu "Keyboard Setup" "Please select the X11 keymap which best corresponds to your preferred layout. Choose 'Other' to see all keymaps." "${x11keyscore[@]}" "Other" "Show all available keymaps and variants")"
+  choice="${choice%%|*}"
+  # Go back to the previous stage if the user backed out.
+  if test -z "$choice"; then
+    export stage=2
+    return
+  fi
+  # If the user selected "Other", then go to the submenu.
+  if test "$choice" = "Other"; then
+    # Ask the user to select from all possible keymaps.
+    choice="$(yad_menu "Keyboard Setup" "Please select the X11 keymap which corresponds to your preferred keyboard layout. This is the list of all available keymaps and variants." "${x11keys[@]}")"
+    choice="${choice%%|*}"
+    # Start keymap setup again if the user backed out of this submenu.
+    test ! -z "$choice" || return
+  fi
+  # Save the choice to the global configuration and move to the next stage.
+  export tgtx11key="$choice"
+  export stage=4
 }
 stage_timezone() {
   # Get a list of regions, filtering out non-Continents and non-Oceans.
@@ -313,7 +387,7 @@ stage_timezone() {
   choice_tzregion="${choice_tzregion%%|*}"
   # Go back to the previous stage if the user backs out.
   if test -z "$choice_tzregion"; then
-    export stage=2
+    export stage=3
     return
   fi
   # Get a list of cities corresponding to the selected region.
@@ -330,7 +404,7 @@ stage_timezone() {
   # Mark this timezone for later use.
   export tgttimezone="$choice_tzregion/$choice_tzcity"
   # Move on to the next stage.
-  export stage=4
+  export stage=5
 }
 stage_rootpw() {
   # Only do this stage if rootpw is enabled in the osinstallgui configuration.
@@ -340,7 +414,7 @@ stage_rootpw() {
     rootpw1="$(yad_password "Root Password" "Please enter a new password for the root account. This is different from the passwords for regular user accounts.")"
     # Go back to the previous stage if the user backed out.
     if test $? -ne 0; then
-      export stage=3
+      export stage=4
       return
     fi
     # Ensure the password is not empty.
@@ -362,7 +436,7 @@ stage_rootpw() {
     export tgtrootpw="$rootpw1"
   fi
   # Go to the next stage.
-  export stage=5
+  export stage=6
 }
 stage_usersetup() {
   # Take note that SC2155 will apply for all input boxes in this section.
@@ -373,9 +447,9 @@ stage_usersetup() {
   if test $? -ne 0; then
     # Previous stage is 4 if root password is enabled, 3 if not.
     if test "$OSINSTALLGUI_ROOTPW" = "1"; then
-      export stage=4
+      export stage=5
     else
-      export stage=3
+      export stage=4
     fi
     return
   fi
@@ -411,13 +485,13 @@ stage_usersetup() {
   fi
   # Now set the global values and move on to the user password stage.
   export tgtusername="$username" tgtfullname="$fullname"
-  export stage=6
+  export stage=7
 }
 stage_userpw() {
   # Once again, SC2155 will apply for the input boxes here, so take care.
   # Go back to the previous stage if the username was not set.
   if test -z "$tgtusername"; then
-    export stage=5
+    export stage=6
     return
   fi
   # Ask the user for the password.
@@ -425,7 +499,7 @@ stage_userpw() {
   userpw1="$(yad_password "User Setup" "Please think of a secure password for the account '$tgtusername', and enter it here.")"
   # Go back to the previous stage if the user backed out.
   if test $? -ne 0; then
-    export stage=5
+    export stage=6
     return
   fi
   # Ensure the field was not left blank.
@@ -455,7 +529,7 @@ stage_userpw() {
   fi
   # User password setup is done, now save and move on to the next stage.
   export tgtuserpw="$userpw1"
-  export stage=7
+  export stage=8
 }
 stage_hostname() {
   # The default hostname will be in the format 'username-SystemModel'.
@@ -469,7 +543,7 @@ stage_hostname() {
   hostname="$(yad_input "Hostname" "Please enter your desired hostname which will identify this computer to the network." "$defaulthostname")"
   # Go back if the user backed out.
   if test $? -ne 0; then
-    export stage=6
+    export stage=7
     return
   fi
   # Ensure the hostname is not empty.
@@ -482,7 +556,7 @@ stage_hostname() {
   # This time we also need to truncate to 255 characters, due to the limit.
   export tgthostname="$(echo "$hostname" | tr -cd '[:alnum:] [:space:] -' | sed 's/ /-/g' | cut -c1-255)"
   # Move on to the next stage.
-  export stage=8
+  export stage=9
 
 }
 stage_disk() {
@@ -490,11 +564,12 @@ stage_disk() {
   if test -z "$(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort)"; then
     yad_message "Error" "No physical disks were found on your system. If your internal drive is failing to be detected, please ensure all of the following are true:\n\n1) Windows Bitlocker drive encryption is disabled.\n\n2) The 'SATA Mode' or 'Storage Mode' option in your BIOS is set to 'AHCI'.\n\n3) All options in your BIOS relating to 'RAID', 'Intel RST', 'Intel Optane', 'Intel Smart Storage', etc. are DISABLED.\n\nIf you need help, please visit <a href='https://github.com/DanielMYT/osinstallgui/wiki/Troubleshooting'>https://github.com/DanielMYT/osinstallgui/wiki/Troubleshooting</a>."
     # Go back to the main menu, since a reboot will probably be needed.
-    export stage=0
+    export stage=1
     return
   fi
   # Find all REAL disks on the system.
-  local disks=($(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort))
+  local disks=()
+  readarray -t disks < <(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort)
   # This will contain each entry for displaying disks to the user.
   local diskentries=()
   # Loop through every detected disk
@@ -507,7 +582,7 @@ stage_disk() {
   local choice="$(yad_menu "Disk Selection" "Please choose the disk you wish to use for the installation." "${diskentries[@]}")"
   # Go back to the previous stage if the user backed out.
   if test -z "$choice"; then
-    export stage=7
+    export stage=8
     return
   fi
   local diskselection="${choice%%|*}"
@@ -545,14 +620,14 @@ stage_disk() {
   # Set up this disk as the target disk for installation.
   export tgtdisk="$diskselection"
   # Move to the partitioning stage.
-  export stage=9
+  export stage=10
 }
 stage_partition() {
   # Ensure the disk still exists by this point.
   if test ! -b "$tgtdisk"; then
     # The disk is no longer valid (possibly got disconnected). Go back.
     yad_message "Error" "The disk you have selected no longer exists. Please ensure that it has not been disconnected from the system."
-    export stage=8
+    export stage=9
     return
   fi
   # Let the user decide how they want to partition the disk.
@@ -610,7 +685,8 @@ stage_partition() {
         return
       fi
       # Get a list of all the partitions which were just created.
-      local diskparts=($(lsblk -lnp "$tgtdisk" | grep part | cut -d' ' -f1))
+      local diskparts=()
+      readarray -t diskparts < <(lsblk -lnp "$tgtdisk" | grep part | cut -d' ' -f1)
       # Ensure the disk was partitioned correctly by counting partitions.
       if test $efimode -eq 1 && test $swapuse -eq 1 && test -z "${diskparts[2]}"; then
         # EFI+Swap configuration needs 3 partitions.
@@ -667,12 +743,13 @@ stage_partition() {
         fi
       fi
       # Proceed to the next stage.
-      export stage=10
+      export stage=11
       ;;
     "2")
       # Install the operating system to an existing partition on the disk.
       # First, check if there are any partitions at all.
-      local diskparts=($(lsblk -lnp "$tgtdisk" | grep part | cut -d' ' -f1))
+      local diskparts=()
+      readarray -t diskparts < <(lsblk -lnp "$tgtdisk" | grep part | cut -d' ' -f1)
       if test -z "${diskparts[0]}"; then
         yad_message "Error" "There are currently no partitions on the disk $tgtdisk. Please use either the 'erase disk' or 'manual partitioning' option to resolve this problem."
         return
@@ -813,7 +890,7 @@ stage_partition() {
         fi
       fi
       # Proceed to the next stage.
-      export stage=10
+      export stage=11
       ;;
     "3")
       # Manually partition the disk before installing.
@@ -831,7 +908,7 @@ stage_partition() {
       ;;
     "")
       # Go back to the previous stage.
-      export stage=8
+      export stage=9
       ;;
   esac
 }
@@ -839,7 +916,7 @@ stage_mount() {
   # Ensure we know which partitions we are working with.
   if test -z "$tgtroot"; then
     # Step back a stage, because we don't know what we are working with.
-    export stage=9
+    export stage=10
     return
   fi
   sync
@@ -847,18 +924,18 @@ stage_mount() {
   if ! helper_mount "$tgtroot" "$tgtpath"; then
     # Complain and go back to the disk setup stage.
     yad_message "Error" "Unable to mount the root partition $tgtroot. The installation cannot continue. A log file can be found at $log."
-    # TODO: Determine whether it would be better to return to 8 or 9.
-    export stage=8
+    # TODO: Determine whether it would be better to return to stage 9 or 10.
+    export stage=9
     return
   fi
   # Mount the EFI partition if needed.
   if test $efimode -eq 1 && ! helper_mount "$tgtefi" "$tgtpath/boot/efi"; then
     yad_message "Error" "Unable to mount the EFI system partition $tgtroot. The installation cannot continue. A log file can be found at $log."
-    export stage=8
+    export stage=9
     return
   fi
   # If we got through without issues, then lets begin the installation.
-  export stage=11
+  export stage=12
 }
 stage_installation() {
   # This is where the fun happens.
@@ -866,7 +943,7 @@ stage_installation() {
   sync
   if ! mount | grep "$tgtroot" &>/dev/null || { test $efimode -eq 1 && ! mount | grep "$tgtefi" &>/dev/null; }; then
     # Return to the mounting stage.
-    export stage=10
+    export stage=11
     return
   fi
   # Determine whether we are using a squashfs or tar image.
@@ -879,7 +956,7 @@ stage_installation() {
       write_log "Failed to unsquash $OSINSTALLGUI_ROOTFS to $tgtpath."
       yad_message "Error" "The installation process did not complete successfully (unsquashfs operation failed). A log file can be found at $log."
       # Return to the main menu because reboot will probably be needed.
-      export stage=0
+      export stage=1
       return
     fi
     write_log "Successfully unsquashed $OSINSTALLGUI_ROOTFS to $tgtpath."
@@ -892,14 +969,14 @@ stage_installation() {
       write_log "Failed to untar $OSINSTALLGUI_ROOTFS to $tgtpath."
       yad_message "Error" "The installation process did not complete successfully (tar operation failed). A log file can be found at $log."
       # Return to the main menu because reboot will probably be needed.
-      export stage=0
+      export stage=1
       return
     fi
     write_log "Successfully untarred $OSINSTALLGUI_ROOTFS to $tgtpath."
   fi
   sync
   # Now move to the post installation stage.
-  export stage=12
+  export stage=13
 }
 stage_postinstall() {
   # This stage only exists for running the specified rootfs cleanup script.
@@ -910,7 +987,7 @@ stage_postinstall() {
       # Warn about the problem, even though it is not fatal.
       yad_message "Error" "Cannot run the rootfs cleanup script because it does not exist or is not executable. This stage of the installation will therefore be skipped, which may cause the newly installed system to be tainted."
       # Move on to the next stage (system configuration) immediately.
-      export stage=13
+      export stage=14
       return
     fi
     # Run the script.
@@ -925,10 +1002,12 @@ stage_postinstall() {
     fi
   fi
   # Go to the next stage, which will be the full system configuration.
-  export stage=13
+  export stage=14
 }
 stage_systemconfig() {
   # This stage is for configuring the system after the installation.
+  # Set up a progress bar using coproc, which we will update ourselves.
+  coproc systemconfigprogress { yad --progress --title="Installation ⎯ $inv" --text="Configuring the system, please be patient." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100; }
   # Generate the fstab file.
   write_log "Generating /etc/fstab for the target system."
   # Do all echos in a block and only write at the end, as required by SC2129.
@@ -948,6 +1027,7 @@ stage_systemconfig() {
     fi
   } > "$tgtpath"/etc/fstab
   write_log "Finished generation of /etc/fstab for the target system."
+  echo "14" >&"${systemconfigprogress[1]}"
   # Prepare the locale for generation by uncommenting the line in the file.
   sed -i "s/#$tgtlocale/$tgtlocale/" "$tgtpath/$OSINSTALLGUI_LOCALES_FILE"
   # Generate the locales using a chroot environment.
@@ -960,9 +1040,34 @@ stage_systemconfig() {
     write_log "$OSINSTALLGUI_LOCALES_CMD successfully generated locales."
   fi
   # Set up the locale configuration file.
-  echo "LANG=$tgtlocale" >> "$tgtpath"/etc/locale.conf
+  echo "LANG=$tgtlocale" > "$tgtpath"/etc/locale.conf
   # Set up the keymap configuration file.
-  echo "KEYMAP=$tgtkeymap" >> "$tgtpath"/etc/vconsole.conf
+  echo "KEYMAP=$tgtkeymap" > "$tgtpath"/etc/vconsole.conf
+  # Set up the X11 keymap configuration file.
+  local layoutx11 variantx11
+  if echo "$tgtx11key" | grep -q _; then
+    # Layout and variant.
+    layoutx11="$(echo "$tgtx11key" | cut -d_ -f1)"
+    variantx11="$(echo "$tgtx11key" | cut -d_ -f2-)"
+  else
+    # Layout only.
+    layoutx11="$(echo "$tgtx11key")"
+  fi
+  install -dm755 "$tgtpath"/etc/X11/xorg.conf.d
+  {
+    echo "# This file was automatically generated by osinstallgui."
+    echo "# It sets the default X11 keymap, chosen when this OS was installed."
+    echo ""
+    echo "Section \"InputClass\""
+    echo "    Identifier \"system-keyboard\""
+    echo "    MatchIsKeyboard \"on\""
+    echo "    Option \"XkbLayout\" \"$layoutx11\""
+    echo "    Option \"XkbVariant\" \"$variantx11\""
+    echo "    Option \"XkbModel\" \"pc105\""
+    echo "    Option \"XkbOptions\" \"\""
+    echo "EndSection"
+  } > "$tgtpath"/etc/X11/xorg.conf.d/00-keyboard.conf
+  echo "28" >&"${systemconfigprogress[1]}"
   # Set up the timezone.
   write_log "Setting timezone of target system to $tgttimezone."
   ln -sfv /usr/share/zoneinfo/"$tgttimezone" "$tgtpath"/etc/localtime  &>>"$log"
@@ -977,6 +1082,7 @@ stage_systemconfig() {
   else
     write_log "Successfully updated hardware clock in chroot environment."
   fi
+  echo "42" >&"${systemconfigprogress[1]}"
   # Set up the root password, if root password is required.
   if test "$OSINSTALLGUI_ROOTPW" = "1"; then
     write_log "Setting the root password using chpasswd."
@@ -988,6 +1094,7 @@ stage_systemconfig() {
       write_log "Successfully set the root password."
     fi
   fi
+  echo "57" >&"${systemconfigprogress[1]}"
   # Set up the new primary user account - depending on whether fullname is set.
   if test ! -z "$tgtfullname"; then
     # Fullname is set.
@@ -1010,6 +1117,7 @@ stage_systemconfig() {
       write_log "Successfully created account for $tgtusername."
     fi
   fi
+  echo "71" >&"${systemconfigprogress[1]}"
   # Set the password for the user account.
   write_log "Setting password for $tgtusername using chpasswd."
   if ! echo "$tgtusername:$tgtuserpw" | chpasswd -R "$tgtpath" -c YESCRYPT &>>"$log"; then
@@ -1019,6 +1127,7 @@ stage_systemconfig() {
   else
     write_log "Successfully set password for $tgtusername"
   fi
+  echo "85" >&"${systemconfigprogress[1]}"
   # Set the hostname for the system.
   write_log "Setting the system hostname to $tgthostname."
   # Need to set in both /etc/hostname and /etc/hosts.
@@ -1030,8 +1139,9 @@ stage_systemconfig() {
   else
     write_log "Successfully set the system hostname to $tgthostname."
   fi
+  echo "100" >&"${systemconfigprogress[1]}"
   # Proceed to the next stage (initramfs generation).
-  export stage=14
+  export stage=15
 }
 stage_initramfs() {
   # Generate an initramfs for the target system.
@@ -1054,7 +1164,7 @@ stage_initramfs() {
     write_log "Successfully generated an initramfs for the target system."
   fi
   # Proceed to the penultimate stage (bootloader setup).
-  export stage=15
+  export stage=16
 }
 stage_bootloader() {
   # Install the bootloader on the target system.
@@ -1092,7 +1202,7 @@ stage_bootloader() {
     write_log "Bootloader installation using 'grub-install $grub_args' succeeded."
   fi
   # Go to the final stage.
-  export stage=16
+  export stage=17
 }
 stage_finish() {
   # Unmount all filesystems.
@@ -1157,6 +1267,8 @@ fi
 
 # Check dependencies - ordered by importance and when they are used.
 check_dep yad
+check_dep xkbcli libxkbcommon
+check_dep yq
 check_dep gdisk gptfdisk
 check_dep sgdisk gptfdisk
 check_dep parted
@@ -1169,7 +1281,7 @@ check_dep unsquashfs squashfs-tools
 export tgtdisk="" tgtroot="" tgtefi="" tgtswap=""
 
 # Other global setup variables which need to be accessed by the whole program.
-export tgtlocale="" tgtkeymap="" tgtrootpw="" tgtusername="" tgtfullname="" tgtuserpw="" tgthostname=""
+export tgtlocale="" tgtkeymap="" tgtx11key="" tgttimezone="" tgtrootpw="" tgtusername="" tgtfullname="" tgtuserpw="" tgthostname=""
 
 # Set up the mount directory for the target system.
 export tgtpath="$workdir/target"
@@ -1186,7 +1298,7 @@ fi
 export stage=0
 
 # Export variables that will be set by preloader.
-export locales=() localescore=() keymaps=() keymapscore=()
+export locales=() localescore=() keymaps=() keymapscore=() x11keys=() x11keyscore=()
 
 # Run preloader function to get locales, keymaps and timezones.
 preloader
@@ -1198,19 +1310,20 @@ while test $stage -ge 0; do
     0) stage_mainmenu ;;
     1) stage_locale ;;
     2) stage_keymap ;;
-    3) stage_timezone ;;
-    4) stage_rootpw ;;
-    5) stage_usersetup ;;
-    6) stage_userpw ;;
-    7) stage_hostname ;;
-    8) stage_disk ;;
-    9) stage_partition ;;
-    10) stage_mount ;;
-    11) stage_installation ;;
-    12) stage_postinstall ;;
-    13) stage_systemconfig ;;
-    14) stage_initramfs ;;
-    15) stage_bootloader ;;
-    16) stage_finish ;;
+    3) stage_x11key ;;
+    4) stage_timezone ;;
+    5) stage_rootpw ;;
+    6) stage_usersetup ;;
+    7) stage_userpw ;;
+    8) stage_hostname ;;
+    9) stage_disk ;;
+    10) stage_partition ;;
+    11) stage_mount ;;
+    12) stage_installation ;;
+    13) stage_postinstall ;;
+    14) stage_systemconfig ;;
+    15) stage_initramfs ;;
+    16) stage_bootloader ;;
+    17) stage_finish ;;
   esac
 done

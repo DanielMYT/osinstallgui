@@ -116,6 +116,76 @@ variant options are set separately. Additionally, some layout names differ
 between console and X11 maps. For example, **English (United Kingdom)** is `uk`
 in the console keymap system, while it is `gb` in the X11 keymap system.
 
+## Why am I asked about installing GRUB in Internal or Removable mode?
+The GRUB UEFI bootloader can be installed in either "Internal" or "Removable"
+mode. At the low-level, this is done by omitting or including the `--removable`
+argument when running the `grub-install` command. The goal of this option is to
+make it easier to boot the system based on which type of drive you are
+installing the operating system to.
+
+The default behaviour of GRUB, when installing in UEFI mode, is to install in
+"Internal" mode. This installs the bootloader to a standard isolated location
+on the EFI system partition (`EFI\<osname>\grubx64.efi`), and then creates a
+boot-order entry in the system's UEFI NVRAM (which is part of the system's
+firmware and unrelated to the disk). This is sufficient when the operating
+system is being installed on an internal disk, and is necessary to ensure that
+each installed operating system (in a dual-boot setup) does not conflict with
+any others. Unfortunately, this causes a series of problems when the disk is
+not internal, and is instead a removable drive, such as a portable SSD or USB
+flash drive.
+
+You see, when you are installing to a removable drive, you expect that, after
+the initial installation is done, you will be able to move that drive to any
+system and boot the same OS (with all your files and apps preserved) on any
+other computer. And unfortunately for you, this will be inconvenient (opr maybe
+impossible) if the GRUB bootloader has been installed in "Internal" mode.
+Because the only (trivial) way to boot the system is using that same boot-order
+entry in the NVRAM, which, as previously mentioned, is part of the system's
+firmware itself, and is not on the disk. Furthermore, that original system is
+now tainted, because it contains a boot-order entry in its firmware which is
+completely unusable, because it points to a disk that is no longer connected to
+that system. Hopefully you are now understanding why this is problematic to say
+the least.
+
+By contrast, if you choose to install in "Removable" mode, the bootloader gets
+installed to the fallback location (`EFI\BOOT\BOOTX64.EFI`) instead of the
+standard location. This fallback location is what UEFI firmwares look for in
+order to boot from a disk directly. As such, you are able to boot from the disk
+by selecting the disk itself in the system's boot menu, instead of relying on a
+boot-order entry. Furthermore, "Removable" mode takes care to ensure it does
+not, under any circumstance, touch the system's NVRAM. Overall, this means that
+the installation is now portable and usable on any other machine, as intended,
+and the original system used for installation does not have its NVRAM tainted.
+
+However, this does not, under any circumstance, mean that "Removable" should
+always be used no matter what. "Internal" mode should still be used for
+internal installations, because on internal disks, especially ones containing
+a dual-boot, there may already a fallback loader installed at the fallback
+location on the EFI system partition. As such, "Removable" mode would cause
+that fallback loader to be overridden, which could cause problems. Indeed, the
+boot-order in the UEFI NVRAM is crucial for these setups, and is likely what
+your main system is already using, even if you aren't aware of it. So overall,
+you should choose the option that is applicable to your installation type.
+
+Most GNU/Linux installers exclude this option altogether. What this means is
+that it will be far more difficult to make a persistent portable installation.
+While the argument could be made that very few users want or need to do this,
+this shouldn't have to mean that anyone who wants to is unable to. And indeed,
+it means that anyone who does want to will have to manually re-install the
+bootloader in removable mode, which will likely have to be done by manually
+mounting the disk partitions, chrooting into the installation, running the
+`grub-install` command themself, etc. It is for this reason that the developers
+of **osinstallgui** have made the decision to include this option. We have made
+sure that the process of selecting the option is as straightforward and trivial
+as possible, including by displaying the choice as a menu, clearly indicating
+"Internal" mode to be the default, as well as adding a "Help" option to help
+users decide if they are completely unsure.
+
+Note that this option is inapplicable to systems booted in Legacy BIOS mode,
+since the Legacy BIOS bootloader always gets installed to the MBR (reserved
+area) of the disk anyway. As a result, you won't be given this option if your
+system is booted in Legacy BIOS mode instead of UEFI.
+
 ## The program doesn't run
 A few troubleshooting steps can help you work out why **osinstallgui** doesn't
 run.

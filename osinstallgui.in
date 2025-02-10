@@ -292,6 +292,7 @@ preloader() {
   write_log "Successfully preloaded X11 keymaps."
   echo "100" >&"${preloaderprogress[1]}"
   # Export all variables from this preloader function.
+  # TODO: Sort all of these alphabetically by description, not the item itself.
   export locales localescore keymaps keymapscore x11keys x11keyscore
 }
 
@@ -379,8 +380,12 @@ stage_timezone() {
   # Get a list of regions, filtering out non-Continents and non-Oceans.
   local tzregions=()
   for tzregion in $(find /usr/share/zoneinfo -mindepth 1 -maxdepth 1 -type d ! -name right ! -name posix ! -name Etc ! -name Brazil ! -name Canada ! -name Chile ! -name Mexico ! -name US -exec basename {} \; | sort -u); do
-    # Two copies for yad_menu, only difference is space instead of underscore.
-    tzregions+=("$tzregion" "${tzregion//_/ }")
+    # The region's description will be whether it is a continent or an ocean.
+    if test "$tzregion" = "Arctic" || test "$tzregion" = "Atlantic" || test "$tzregion" = "Indian" || test "$tzregion" = "Pacific"; then
+      tzregions+=("$tzregion" "${tzregion//_/ } (Ocean)")
+    else
+      tzregions+=("$tzregion" "${tzregion//_/ } (Continent)")
+    fi
   done
   # Let the user decide which region are in, before finding the cities.
   local choice_tzregion="$(yad_menu "Timezone Setup" "Please select the region which best corresponds to your geographical location." "${tzregions[@]}")"
@@ -1051,7 +1056,7 @@ stage_systemconfig() {
     variantx11="$(echo "$tgtx11key" | cut -d_ -f2-)"
   else
     # Layout only.
-    layoutx11="$(echo "$tgtx11key")"
+    layoutx11="$tgtx11key"
   fi
   install -dm755 "$tgtpath"/etc/X11/xorg.conf.d
   {
@@ -1168,16 +1173,28 @@ stage_initramfs() {
 }
 stage_bootloader() {
   # Install the bootloader on the target system.
+  # In both cases, the '--target' option is now explicitly specified.
+  # Otherwise some buggy BIOSes will default to a target unsupported by GRUB.
   local grub_args
   if test $efimode -eq 1; then
-    # UEFI mode - ask if the user wants to install in "removable" mode.
-    if ! yad_prompt "Bootloader" "The GRUB UEFI bootloader can be installed in either 'internal' or 'removable' mode, to make it easier to boot depending on which type of disk you are installing $osname to. If you are installing to an internal Hard Drive or SSD, then answer 'YES' to install in 'internal' mode. If you are installing to a flash drive or USB-attached HDD/SSD, then answer 'NO' to install in 'removable' mode."; then
+    # UEFI mode.
+    grub_args+="--target=x86_64-efi"
+    # Ask the user if they want to install in internal or removable mode.
+    # We have now switched to a menu to improve user-friendliness.
+    local choice="$(yad_menu "Bootloader" "Which type of disk are you installing $osname to?" "Internal" "Internal SSD or hard drive (default)." "Removable" "Portable HDD/SSD or USB flash drive." "Help" "More detail about this question.")"
+    choice="${choice%%|*}"
+    if test -z "$choice" || test "$choice" = "Help"; then
+      # Show the help message.
+      yad_message "Bootloader" "The GRUB UEFI bootloader can be installed in either 'Internal' or 'Removable' mode, to make it easier to boot depending on which type of disk you are installing $osname to.\n\nChoose 'Internal' for all internal disks or any disks that are intended to remain connected to the same system. This includes for dual-booting.\n\nChoose 'Removable' if you are installing $osname to a removable drive, such a portable HDD/SSD or a USB flash drive. This will ensure the drive can be booted on any system, and is not locked to the system it was installed from.\n\nPlease consult the FAQ in the osinstallgui source repository for more information, as well as the rationale behind the inclusion of this option in osinstallgui."
+      # Start this choice again.
+      return
+    elif test "$choice" = "Removable"; then
       # Add the --removable flag to the arguments for grub-install.
-      grub_args+="--removable"
+      grub_args+=" --removable"
     fi
   else
     # Legacy BIOS mode - the disk has to be explicitly passed as an argument.
-    grub_args+="$tgtdisk"
+    grub_args+="--target=i386-pc $tgtdisk"
   fi
   # Try to install the bootloader.
   write_log "Trying to install bootloader using 'grub-install $grub_args'."

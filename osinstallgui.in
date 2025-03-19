@@ -225,7 +225,7 @@ preloader() {
     readarray -t keymapsavailable < <(localectl list-keymaps | sort -u)
   else
     # Use the manual search method (slower and messier).
-    readarray -t keymapsavailable < <(find /usr/share/keymaps -type f ! -name README.md ! -name \*.inc ! -name \*compose\* ! -name \*.m4 ! -name \*.doc -exec basename {} \; | sort -u | sed 's/.map.gz//')
+    readarray -t keymapsavailable < <(find /usr/share/keymaps -type f -name \*.map.gz -exec basename {} \; | sort -u | sed 's/.map.gz//')
   fi
   # Define the core keymaps - the most common ones, similar to as above.
   local keymapscommon="de el es fr it pl pt ro ru sv uk us"
@@ -380,12 +380,13 @@ stage_timezone() {
   # Get a list of regions, filtering out non-Continents and non-Oceans.
   local tzregions=()
   for tzregion in $(find /usr/share/zoneinfo -mindepth 1 -maxdepth 1 -type d ! -name right ! -name posix ! -name Etc ! -name Brazil ! -name Canada ! -name Chile ! -name Mexico ! -name US -exec basename {} \; | sort -u); do
-    # The region's description will be whether it is a continent or an ocean.
-    if test "$tzregion" = "Arctic" || test "$tzregion" = "Atlantic" || test "$tzregion" = "Indian" || test "$tzregion" = "Pacific"; then
-      tzregions+=("$tzregion" "${tzregion//_/ } (Ocean)")
-    else
-      tzregions+=("$tzregion" "${tzregion//_/ } (Continent)")
-    fi
+    # Specify whether regions are continents or oceans, to avoid confusion.
+    local tzregdesc
+    case "$tzregion" in
+      "Arctic"|"Atlantic"|"Indian"|"Pacific") tzregdesc="Ocean" ;;
+      *) tzregdesc="Continent" ;;
+    esac
+    tzregions+=("$tzregion" "$tzregdesc")
   done
   # Let the user decide which region are in, before finding the cities.
   local choice_tzregion="$(yad_menu "Timezone Setup" "Please select the region which best corresponds to your geographical location." "${tzregions[@]}")"
@@ -398,8 +399,8 @@ stage_timezone() {
   # Get a list of cities corresponding to the selected region.
   local tzcities=()
   for tzcity in $(find /usr/share/zoneinfo/"$choice_tzregion" -mindepth 1 -maxdepth 1 -type f -exec basename {} \; | sort -u); do
-    # Two copies for yad_menu, only difference is space instead of underscore.
-    tzcities+=("$tzcity" "${tzcity//_/ }")
+    # Make it display only one entry, since the description would be identical.
+    tzcities+=("$tzcity" "")
   done
   # Let the user decide which city they are in from their selected region.
   local choice_tzcity="$(yad_menu "Timezone Setup" "Please select the city from $choice_tzregion which best corresponds to your geographical location." "${tzcities[@]}")"
@@ -1286,7 +1287,6 @@ fi
 check_dep yad
 check_dep xkbcli libxkbcommon
 check_dep yq
-check_dep gdisk gptfdisk
 check_dep sgdisk gptfdisk
 check_dep parted
 check_dep partprobe parted

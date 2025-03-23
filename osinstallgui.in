@@ -420,16 +420,18 @@ stage_rootpw() {
   if test "$OSINSTALLGUI_ROOTPW" = "1"; then
     # Ask the user for the root password. Again SC2155 applies here.
     local rootpw1
-    rootpw1="$(yad_password "Root Password" "Please enter a new password for the root account. This is different from the passwords for regular user accounts.")"
+    rootpw1="$(yad_password "Root Password" "Please enter a new password for the system's root account. Leave the field empty to disable the root account (users willl still be able elevate using 'sudo').")"
     # Go back to the previous stage if the user backed out.
     if test $? -ne 0; then
       export stage=4
       return
     fi
-    # Ensure the password is not empty.
+    # Check if the root password field is empty.
     if test -z "$rootpw1"; then
-      # Complain to the user and try again.
-      yad_message "Error" "The root password field cannot be left blank."
+      # Unsave the existing root password, in case the user went back a stage.
+      export tgtrootpw=""
+      # Skip ahead to the next stage immediately.
+      export stage=6
       return
     fi
     # Now ask for the root password again, for verification purposes.
@@ -440,6 +442,7 @@ stage_rootpw() {
     if test "$rootpw1" != "$rootpw2"; then
       # Complain about this problem to the user.
       yad_message "Error" "The passwords you entered for the root account do not match."
+      return
     fi
     # Password was set successfully. Save it for later.
     export tgtrootpw="$rootpw1"
@@ -1092,8 +1095,8 @@ stage_systemconfig() {
     write_log "Successfully updated hardware clock in chroot environment."
   fi
   echo "42" >&"${systemconfigprogress[1]}"
-  # Set up the root password, if root password is required.
-  if test "$OSINSTALLGUI_ROOTPW" = "1"; then
+  # Set up the root password, if a root password was specified.
+  if test ! -z "$tgtrootpw"; then
     write_log "Setting the root password using chpasswd."
     if ! echo "root:$tgtrootpw" | chpasswd -R "$tgtpath" -c YESCRYPT &>>"$log"; then
       # Warn about it being unsuccessful.

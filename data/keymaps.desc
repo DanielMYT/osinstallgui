@@ -1,3 +1,10 @@
+# This file is part of osinstallgui. Copyright (C) 2025 Daniel Massey.
+
+# This file contains the list of known keymaps, and their descriptions.
+# osinstallgui will detect all the available keymaps on the system.
+# osinstallgui will match the detected keymaps to the descriptions here.
+# This file should get updated for new keymaps when kbd gets a new version.
+
 3l: Three-layer ergonomic alternative
 adnw: German Neo-based ergonomic (Aus der Neo-Welt)
 amiga-de: German for Amiga

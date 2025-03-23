@@ -199,7 +199,8 @@ preloader() {
   while IFS= read -r line; do
     # Filter the line and then uncomment it.
     # We are filtering for UTF-8 and no comments with space between # and text.
-    local linefiltered="$(echo "$line" | grep UTF-8 | cut -d' ' -f1 | sed -e '/^#\s.*$/d' -e 's/#//')"
+    # We also filter out C.UTF-8, as it's in the locales file as of Glibc 2.41.
+    local linefiltered="$(echo "$line" | grep UTF-8 | cut -d' ' -f1 | sed -e '/^#\s.*$/d' -e 's/#//' | sed '/^C.UTF-8/d')"
     # Only append to the list of locales if this line exists.
     if test ! -z "$linefiltered"; then
       # Cross-reference the locale descriptions data file.

@@ -1,3 +1,10 @@
+# This file is part of osinstallgui. Copyright (C) 2025 Daniel Massey.
+
+# This file contains the list of known locales, and their descriptions.
+# osinstallgui will detect all the available locales on the system.
+# osinstallgui will match the detected locales to the descriptions here.
+# This file should get updated for new locales when Glibc gets a new version.
+
 aa_DJ.UTF-8: Afar (Djibouti)
 aa_ER: Afar (Eritrea)
 aa_ET: Afar (Ethiopia)
@@ -186,11 +193,13 @@ lij_IT: Ligurian (Italy)
 ln_CD: Lingala (Democratic Republic of the Congo)
 lo_LA: Lao (Laos)
 lt_LT.UTF-8: Lithuanian (Lithuania)
+ltg_LV.UTF-8: Latgalian (Latvia)
 lv_LV.UTF-8: Latvian (Latvia)
 lzh_TW: Literary Chinese (Taiwan)
 mag_IN: Magahi (India)
 mai_IN: Maithili (India)
 mai_NP: Maithili (Nepal)
+mdf_RU: Moksha (Russia)
 mfe_MU: Morisyen (Mauritius)
 mg_MG.UTF-8: Malagasy (Madagascar)
 mhr_RU: Eastern Mari (Russia)
@@ -245,6 +254,7 @@ sa_IN: Sanskrit (India)
 sah_RU: Sakha (Russia)
 sat_IN: Santali (India)
 sc_IT: Sardinian (Italy)
+scn_IT: Sicilian (Italy)
 sd_IN: Sindhi (India)
 sd_IN@devanagari: Sindhi (India, Devanagari script)
 se_NO: Northern Sami (Norway)

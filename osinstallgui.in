@@ -22,6 +22,9 @@
 # Word splitting is often done intentionally, and/or the command handles it.
 # shellcheck disable=SC2086
 
+# We manually check configuration values and set them (or die) if unset.
+# shellcheck disable=SC2153
+
 # We intentionally ignore return values from declarations in most cases.
 # shellcheck disable=SC2155
 
@@ -225,7 +228,7 @@ preloader() {
     readarray -t keymapsavailable < <(localectl list-keymaps | sort -u)
   else
     # Use the manual search method (slower and messier).
-    readarray -t keymapsavailable < <(find /usr/share/keymaps -type f -name \*.map.gz -exec basename {} \; | sort -u | sed 's/.map.gz//')
+    readarray -t keymapsavailable < <(find "$OSINSTALLGUI_KEYMAPS_LOCATION" -type f -name \*.map.gz -exec basename {} \; | sort -u | sed 's/.map.gz//')
   fi
   # Define the core keymaps - the most common ones, similar to as above.
   local keymapscommon="de el es fr it pl pt ro ru sv uk us"
@@ -1266,12 +1269,19 @@ else
   write_log "Config file '@@CONFPATH/osinstallgui.conf' does not exist."
 fi
 
-# If any configuration values are missing, raise an error.
-for val in "$OSINSTALLGUI_ROOTFS" "$OSINSTALLGUI_CLEANUP_CMD" "$OSINSTALLGUI_INITRAMFS_CMD" "$OSINSTALLGUI_ALLOW_BTRFS" "$OSINSTALLGUI_LOCALES_CMD" "$OSINSTALLGUI_LOCALES_FILE" "$OSINSTALLGUI_KEYMAPS_SYSTEMD" "$OSINSTALLGUI_ROOTPW" "$OSINSTALLGUI_ADMIN_GROUP" "$OSINSTALLGUI_USER_SHELL" "$OSINSTALLGUI_USER_PWSCORE"; do
+# Do not proceed if any mandatory configuration options are not set.
+for val in "$OSINSTALLGUI_ROOTFS" "$OSINSTALLGUI_INITRAMFS_CMD" "$OSINSTALLGUI_LOCALES_CMD" "$OSINSTALLGUI_LOCALES_FILE" "$OSINSTALLGUI_ADMIN_GROUP" "$OSINSTALLGUI_USER_SHELL"; do
   if test -z "$val"; then
     die "$inv cannot run due to one or more missing config value(s)."
   fi
 done
+
+# Set up defaults for configuration values which are not mandatory.
+test ! -z "$OSINSTALLGUI_ALLOW_BTRFS" || OSINSTALLGUI_ALLOW_BTRFS=1
+test ! -z "$OSINSTALLGUI_KEYMAPS_SYSTEMD" || OSINSTALLGUI_KEYMAPS_SYSTEMD=1
+test ! -z "$OSINSTALLGUI_KEYMAPS_LOCATION" || OSINSTALLGUI_KEYMAPS_LOCATION="/usr/share/keymaps"
+test ! -z "$OSINSTALLGUI_ROOTPW" || OSINSTALLGUI_ROOTPW=1
+test ! -z "$OSINSTALLGUI_USER_PWSCORE" || OSINSTALLGUI_USER_PWSCORE=0
 
 # Ensure data files exist.
 if test ! -e "@@CONFPATH@@"/data/locales.desc; then

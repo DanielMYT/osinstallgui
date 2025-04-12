@@ -116,6 +116,33 @@ variant options are set separately. Additionally, some layout names differ
 between console and X11 maps. For example, **English (United Kingdom)** is `uk`
 in the console keymap system, while it is `gb` in the X11 keymap system.
 
+## What is an EFI system partition and why do I need one?
+Modern computers generally boot in UEFI mode instead of the older Legacy BIOS
+mode, primarily due to it being faster and easier to maintain. The main
+difference between Legacy BIOS and UEFI mode is where the bootloader is stored.
+On Legacy BIOS systems, the bootloader gets installed into the MBR (Master Boot
+Record) of the disk, which is a small hidden area reserved for the bootloader.
+By contrast, on UEFI systems, whereby disks commonly use the GPT partitioning
+scheme instead of MBR, there is no such area. Instead, UEFI bootloaders are
+installed onto a separate regular partition on the drive (known as, you guessed
+it, the EFI system partition). This partition is generally small (around 100MiB
+to 500MiB), but the main requirement is that the partition needs to use the
+**FAT32** filesystem, which is the only filesystem supported by the majority of
+UEFI firmware implementations. And, as you may already know, modern operating
+systems cannot be installed onto a **FAT32** filesystem, as it has too many
+limitations. Instead, Windows is installed on **NTFS**, and GNU/Linux is
+generally installed on either **ext4** or **btrfs**. This is why a separate
+partition is needed, and the root partition for the OS cannot be used.
+
+When you choose the "Erase Disk" method of **osinstallgui**, the installer will
+automatically create an EFI system partition as part of its process. If you are
+instead using the "Existing partition" method, you are required to select the
+EFI system partition to use for the installation. If you are dual-booting with
+another OS, it is very likely that one already exists - and you can safely use
+it. Multiple UEFI bootloaders (for different operating systems) can share the
+same EFI partition, and will not conflict with each other, and the partition
+will not need to be re-formatted if it is already **FAT32**.
+
 ## Why am I asked about installing GRUB in Internal or Removable mode?
 The GRUB UEFI bootloader can be installed in either "Internal" or "Removable"
 mode. At the low-level, this is done by omitting or including the `--removable`

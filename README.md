@@ -2,20 +2,21 @@
 Rewrite of installation program originally from MassOS, now with GTK3 GUI.
 
 # IMPORTANT NOTICE
-osinstallgui is currently in an **experimental testing phase**, and will remain
-in this state until version **1.0.0** is released. See the **version.txt** file
-to check the current version (all **0.x.x** versions will be experimental).
+osinstallgui is currently in an **experimental development phase**, and will
+remain in this state until version **1.0.0** is released. See the
+**version.txt** file to check the current version (all **0.x.x** versions will
+be experimental). The [FAQ document](FAQ.md) has more information about how the
+program is and will be versioned.
 
 It should go without saying that this is an operating system installation tool.
 As such, it needs to perform operations on storage drives and partitions,
-including erasing, partitioning, and formatting. As the software may not yet be
-fully stable and bug-free, you should ensure all your important data is backed
-up, and the software is only used in contexts where you would be capable of
-recovering from a potential loss of data. By using this software, especially
-during the  testing phase, you agree to accept FULL RESPONSIBILITY for any loss
-of data or other possible consequences which may arise from using the software.
-The author(s) of the software assume no liability for such situations, in the
-unlikely event that they occur.
+including erasing, partitioning, and formatting. Although every published
+version of the software has been tested, we cannot guarantee it will be fully
+bug-free. Therefore, you should ensure all your important data is backed up,
+and the program is only used in contexts where you would be capable of
+recovering from a potential (albeit highly unlikely) loss of data. The
+author(s) of the software assume no liability any data loss or other undesired
+consequences which may arise from use of the software.
 
 # Information
 This is a full rewrite of the installation program originally from MassOS.
@@ -119,8 +120,11 @@ as an installer for your distro. The sample configuration file in the source
 tree, **osinstallgui.conf**, should be modified as necessary for your distro.
 All possible configuration options are described in detail in this file. You
 can either edit the file directly in the source tree, or edit it after it has
-been installed (see the **Installation** section above). Note that ALL options
-must be set; osinstaller will refuse to run if any are missing.
+been installed (see the **Installation** section above). The comments in the
+configuration file describe which options are **mandatory** (the program won't
+run without them), and which are **optional** (the program will assume defaults
+if they are unset). For robustness, we always recommend ensuring every possible
+configuration option is set, however.
 
 # Desktop Integration
 An example desktop file is provided in this source tree, but it does not get

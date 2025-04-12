@@ -585,8 +585,8 @@ stage_diskpar() {
   fi
   # Set up the menu.
   local choice="$(yad_menu "Disk Setup" "Please choose how you would like to set up the disk(s) for installation." \
-  "1" "Select one whole disk to erase and install $osname to." \
-  "2" "Select an existing partition on a disk to install $osname to." \
+  "1" "Erase an entire disk and install $osname." \
+  "2" "Select an existing partition to install $osname to." \
   "3" "Manually create and/or modify partitions before installing." \
   "4" "More information and clarification about this question.")"
   # Decide what to do based on the user's selection.
@@ -763,7 +763,7 @@ stage_diskpar() {
       local choicerootpar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the root filesystem. It will be formatted, and any existing data on it will be deleted." "${partentries[@]}")"
       # Go back if the user backed out.
       test ! -z "$choicerootpar" || return
-      # Get the selection as normal.
+      # Filter yad return value to get the selection.
       local rootparselection="${choicerootpar%%|*}"
       # Check if the partition is mounted.
       if mount | grep -q "$rootparselection"; then
@@ -799,6 +799,9 @@ stage_diskpar() {
         yad_message "Partition Setup" "Your system is booted in UEFI mode. A small FAT32 (vfat) partition of around 100MiB-500MiB, separate to the root partition, must therefore exist on the disk, to be used for the bootloader installation. It can be shared between all OSes in a dual-boot setup (without needing to be re-formatted), and it may be on a different disk to the one containing the selection for the root partition. If you need help with this, please refer to the FAQ document in the osinstallgui source repository."
         # Ask which EFI partition to use.
         local choiceefipar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the EFI system partition. It must differ from the selection for the root partition." "${partentries[@]}")"
+        # Go back if the user backed out.
+        test ! -z "$choiceefipar" || return
+        # Filter yad return value to get the selection.
         local efiparselection="${choiceefipar%%|*}"
         # The root partition and EFI partition cannot be the same.
         if test "$efiparselection" = "$rootparselection"; then

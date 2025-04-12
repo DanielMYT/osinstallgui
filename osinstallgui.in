@@ -574,10 +574,23 @@ stage_hostname() {
 stage_diskpar() {
   # New method which is designed to merge disk setup and partition setup.
   # It also allows for more flexibility, i.e., for multi-disk setups.
-  # First, detect all real disks on the system and ensure at least one exists.
+  # First, detect the disk containing the installation media, if any.
+  local findlivepar="$(findmnt -no SOURCE -T "$OSINSTALLGUI_ROOTFS" 2>/dev/null)"
+  # Only deal with it if it is a partition of a physical disk.
+  if test ! -z "$findlivepar" && test -b "$findlivepar"; then
+    # Find the source disk.
+    local findlivedisk="$(lsblk -no PKNAME "$findlivepar" 2>/dev/null)"
+    # Ensure it's a physical disk, again.
+    if test ! -z "/dev/$findlivedisk" && test -b "/dev/$findlivedisk"; then
+      # Set up this disk to be filtered out.
+      local imdisk="$findlivedisk"
+    fi
+  fi
+  # Detect all real disks, filtering out the installation media if needed.
   local disks=()
-  readarray -t disks < <(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort)
-  if test -z "${disks[@]}"; then
+  readarray -t disks < <(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort | grep -vx "$imdisk")
+  # Throw an error if no disks were found.
+  if test ${#disks[@]} -eq 0; then
     yad_message "Error" "No physical disks were found on your system. If your internal drive is failing to be detected, please ensure all of the following are true:\n\n1) Windows Bitlocker drive encryption is disabled.\n\n2) The 'SATA Mode' or 'Storage Mode' option in your BIOS is set to 'AHCI'.\n\n3) All options in your BIOS relating to 'RAID', 'Intel RST', 'Intel Optane', 'Intel Smart Storage', etc. are DISABLED.\n\nIf you need help, please look at the FAQ document in the osinstallgui source repository, and/or approach the support channel(s) of your distribution."
     # Go back to the main menu, since a reboot will probably be needed.
     export stage=0
@@ -609,15 +622,6 @@ stage_diskpar() {
       local mountedparts="$(mount | grep "$diskselection" | cut -d' ' -f1,3 | sort -rk2 | cut -d' ' -f1)"
       # Allow us to try and unmount them if any exist.
       if test ! -z "$mountedparts"; then
-        # Ensure this disk is not the installation media.
-        # TODO: Support non-dracut initramfs (or just detect in a better way).
-        for part in $mountedparts; do
-          if test "$(mount | grep "$part" | cut -d' ' -f3)" = "/run/initramfs/live"; then
-            # Complain and return.
-            yad_message "Error" "It is not possible to install $osname to the same disk as the one which contains the installation media. Please choose a different disk."
-            return
-          fi
-        done
         # Let the user decide if they want to try to unmount the partitions.
         if yad_prompt "Warning" "The selected disk appears to have mounted partitions. In order to use it for the installation, all partitions must first be unmounted. Do you want this program to try and unmount them for you?"; then
           # Try to unmount each partition. Sort was done because we can't use -R.
@@ -759,6 +763,11 @@ stage_diskpar() {
           fi
         done
       done
+      # Throw an error and go back if there are no partitions on any disk.
+      if test ${#partentries[@]} -eq 0; then
+        yad_message "Error" "No partitions were found on any disk. Please choose the 'Erase Disk' option instead, or alteratively use the 'Manual Partitioning' option to create the required partitions on the disk(s)."
+        return
+      fi
       # Ask which root partition to use.
       local choicerootpar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the root filesystem. It will be formatted, and any existing data on it will be deleted." "${partentries[@]}")"
       # Go back if the user backed out.
@@ -767,11 +776,6 @@ stage_diskpar() {
       local rootparselection="${choicerootpar%%|*}"
       # Check if the partition is mounted.
       if mount | grep -q "$rootparselection"; then
-        # Check Live CD.
-        if test "$(mount | grep "$rootparselection" | cut -d' ' -f3)" = "/run/initramfs/live"; then
-          yad_message "Error" "This partition contains the installation media. It is therefore not possible to use it for the installation of $osname. Please select another partition."
-          return
-        fi
         # Unmount if needed.
         if yad_prompt "Warning" "The selected partition appears to be mounted. It must be unmounted before it can be used for the installation of $osname. Would you like this program to try unmounting it for you?"; then
           # Try to unmount.

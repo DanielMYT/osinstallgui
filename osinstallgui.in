@@ -100,6 +100,59 @@ yad_password() {
 }
 
 # Helper functions.
+helper_sortentries() {
+  # This function will sort an array of yad menu entries by description.
+  # Do nothing if no argument was passed.
+  test ! -z "$1" || return
+  # Get the array.
+  local itemsunsorted=()
+  for item in "$@"; do
+    itemsunsorted+=("$item")
+  done
+  # Set up the files for writing and reading back.
+  # TODO: See if this whole process could be done without using files on disk.
+  local sortfilepre1="$(mktemp "$workdir"/.sortpre1XXXXXX)"
+  local sortfilepre2="$(mktemp "$workdir"/.sortpre2XXXXXX)"
+  local sortfilepost1="$(mktemp "$workdir"/.sortpost1XXXXXX)"
+  local sortfilepost2="$(mktemp "$workdir"/.sortpost2XXXXXX)"
+  # Write every 1st entry to a file, and every 2nd entry to a file.
+  # Do this by iterating through using the array index, not the item itself.
+  for item in "${!itemsunsorted[@]}"; do
+    if test $((item % 2)) -eq 0; then
+      # 1st entry.
+      echo "${itemsunsorted[item]}" >>"$sortfilepre1"
+    else
+      # 2nd entry.
+      echo "${itemsunsorted[item]}" >>"$sortfilepre2"
+    fi
+  done
+  # Sort by the 2nd column (description), but keep consistent for 1st too.
+  paste "$sortfilepre1" "$sortfilepre2" | sort -k2 | cut -f1 > "$sortfilepost1"
+  paste "$sortfilepre1" "$sortfilepre2" | sort -k2 | cut -f2 > "$sortfilepost2"
+  # Open file descriptors for both files, so we can access them while looping.
+  # Use high numbers, in case lower ones are already in use for some reason.
+  exec 99<"$sortfilepost1"
+  exec 100<"$sortfilepost2"
+  # Loop through and print each alternating line to stdout.
+  while true; do
+    # Break out of the loop when either read no longer succeeds (end of file).
+    if read -r line1 <&99; then
+      echo "$line1"
+    else
+      break
+    fi
+    if read -r line2 <&100; then
+      echo "$line2"
+    else
+      break
+    fi
+  done
+  # Close the file descriptors.
+  exec 99<&-
+  exec 100<&-
+  # Now we are done, remove the temporary files.
+  rm -f "$sortfilepre1" "$sortfilepre2" "$sortfilepost1" "$sortfilepost2"
+}
 helper_format() {
   write_log "Trying to format $1 as $2."
   case "$2" in
@@ -193,6 +246,8 @@ preloader() {
   coproc preloaderprogress { yad --progress --title="Loading... ⎯ $inv" --text="The installer is loading, please be patient." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100; }
   # Set up the list of locales, as well as the list of the most common ones.
   write_log "Preloading locales."
+  # Arrays to store the stuff into (u is for unsorted, will be sorted later).
+  local ulocales=() ulocalescore=()
   # Acceptable core locales - searched locales will be matched against this.
   local localescorelist="de_DE.UTF-8 el_GR.UTF-8 en_GB.UTF-8 en_US.UTF-8 es_ES.UTF-8 es_MX.UTF-8 fr_FR.UTF-8 it_IT.UTF-8 pl_PL.UTF-8 pt_BR.UTF-8 pt_PT.UTF-8 ro_RO.UTF-8 ru_RU.UTF-8 sv_SE.UTF-8"
   # Get a list of locales from the locales file.
@@ -210,27 +265,28 @@ preloader() {
         localedesc="UNKNOWN"
       fi
       # Add both the filtered locale name and its description to the list.
-      locales+=("$linefiltered" "$localedesc")
+      ulocales+=("$linefiltered" "$localedesc")
       # If it should be in the core list, add it to that.
       for corelocale in $localescorelist; do
         if test "$corelocale" = "$linefiltered"; then
-          localescore+=("$linefiltered" "$localedesc")
+          ulocalescore+=("$linefiltered" "$localedesc")
         fi
       done
     fi
   done < "$OSINSTALLGUI_LOCALES_FILE"
   write_log "Successfully preloaded locales."
-  echo "33" >&"${preloaderprogress[1]}"
+  echo "25" >&"${preloaderprogress[1]}"
   # Get a list of all supported keymaps.
   write_log "Preloading console keymaps."
   local keymapsavailable=()
+  # Use the systemd localectl method if possible, otherwise search manually.
   if test "$OSINSTALLGUI_KEYMAPS_SYSTEMD" = "1" && which localectl &>/dev/null; then
-    # Use the systemd method (localectl).
     readarray -t keymapsavailable < <(localectl list-keymaps | sort -u)
   else
-    # Use the manual search method (slower and messier).
     readarray -t keymapsavailable < <(find "$OSINSTALLGUI_KEYMAPS_LOCATION" -type f -name \*.map.gz -exec basename {} \; | sort -u | sed 's/.map.gz//')
   fi
+  # Arrays to store the stuff into (u is for unsorted, will be sorted later).
+  local ukeymaps=() ukeymapscore=()
   # Define the core keymaps - the most common ones, similar to as above.
   local keymapscommon="de el es fr it pl pt ro ru sv uk us"
   # Get descriptions for each keymap.
@@ -242,19 +298,21 @@ preloader() {
       keymapdesc="UNKNOWN"
     fi
     # Add both the keymap name and its description to the list.
-    keymaps+=("$keymap" "$keymapdesc")
+    ukeymaps+=("$keymap" "$keymapdesc")
     # If it should be in the core list, add it to that.
     for corekeymap in $keymapscommon; do
       if test "$corekeymap" = "$keymap"; then
-        keymapscore+=("$keymap" "$keymapdesc")
+        ukeymapscore+=("$keymap" "$keymapdesc")
       fi
     done
   done
   write_log "Successfully preloaded console keymaps."
-  echo "66" >&"${preloaderprogress[1]}"
+  echo "50" >&"${preloaderprogress[1]}"
   # Get a list of all supported X11 keymaps (layouts, variants, descriptions).
   write_log "Preloading X11 keymaps."
   local x11layouts=() x11variants=() x11descriptions=()
+  # Arrays to store the stuff into (u is for unsorted, will be sorted later).
+  local ux11keys=() ux11keyscore=()
   # Set up the core values.
   local x11keyscorelist="de es fr gb gr it pl pt ro ru se us"
   # Need to write to temporary files because reading from pipe fails.
@@ -281,22 +339,32 @@ preloader() {
   for x11index in "${!x11layouts[@]}"; do
     # If variant is empty, only add the layout. Otherwise add both.
     if test -z "${x11variants[x11index]}"; then
-      x11keys+=("${x11layouts[x11index]}" "${x11descriptions[x11index]}")
+      ux11keys+=("${x11layouts[x11index]}" "${x11descriptions[x11index]}")
       # If it should be in the core list, also add it to that.
       # Note that only non-variant ones are in the core list.
       for corex11map in $x11keyscorelist; do
         if test "$corex11map" = "${x11layouts[x11index]}"; then
-          x11keyscore+=("${x11layouts[x11index]}" "${x11descriptions[x11index]}")
+          ux11keyscore+=("${x11layouts[x11index]}" "${x11descriptions[x11index]}")
         fi
       done
     else
-      x11keys+=("${x11layouts[x11index]}_${x11variants[x11index]}" "${x11descriptions[x11index]}")
+      ux11keys+=("${x11layouts[x11index]}_${x11variants[x11index]}" "${x11descriptions[x11index]}")
     fi
   done
   write_log "Successfully preloaded X11 keymaps."
+  echo "75" >&"${preloaderprogress[1]}"
+  # Sort each set of entries by description.
+  # Store them into the normal/global (non-u) variable names.
+  write_log "Sorting all sets of entries by their descriptions."
+  readarray -t locales < <(helper_sortentries "${ulocales[@]}")
+  readarray -t localescore < <(helper_sortentries "${ulocalescore[@]}")
+  readarray -t keymaps < <(helper_sortentries "${ukeymaps[@]}")
+  readarray -t keymapscore < <(helper_sortentries "${ukeymapscore[@]}")
+  readarray -t x11keys < <(helper_sortentries "${ux11keys[@]}")
+  readarray -t x11keyscore < <(helper_sortentries "${ux11keyscore[@]}")
+  write_log "Successfully sorted all sets of entries by their descriptions."
   echo "100" >&"${preloaderprogress[1]}"
-  # Export all variables from this preloader function.
-  # TODO: Sort all of these alphabetically by description, not the item itself.
+  # Export needed global variables from this preloader function.
   export locales localescore keymaps keymapscore x11keys x11keyscore
 }
 

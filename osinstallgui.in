@@ -132,10 +132,10 @@ helper_sortentries() {
     # Where -12 is the first, and +12 is the last.
     # To do this, get the negative values and sort in reverse.
     # Then get the positive values and sort normally.
-    paste "$sortfilepre1" "$sortfilepre2" | grep -- - | sort -rk2 | cut -f1 >"$sortfilepost1"
-    paste "$sortfilepre1" "$sortfilepre2" | grep -- - | sort -rk2 | cut -f2 >"$sortfilepost2"
-    paste "$sortfilepre1" "$sortfilepre2" | grep -- + | sort -k2 | cut -f1 >>"$sortfilepost1"
-    paste "$sortfilepre1" "$sortfilepre2" | grep -- + | sort -k2 | cut -f2 >>"$sortfilepost2"
+    paste "$sortfilepre1" "$sortfilepre2" | grep UTC- | sort -rk2 | cut -f1 >"$sortfilepost1"
+    paste "$sortfilepre1" "$sortfilepre2" | grep UTC- | sort -rk2 | cut -f2 >"$sortfilepost2"
+    paste "$sortfilepre1" "$sortfilepre2" | grep UTC+ | sort -k2 | cut -f1 >>"$sortfilepost1"
+    paste "$sortfilepre1" "$sortfilepre2" | grep UTC+ | sort -k2 | cut -f2 >>"$sortfilepost2"
   else
     paste "$sortfilepre1" "$sortfilepre2" | sort -k2 | cut -f1 >"$sortfilepost1"
     paste "$sortfilepre1" "$sortfilepre2" | sort -k2 | cut -f2 >"$sortfilepost2"
@@ -287,7 +287,7 @@ preloader() {
     fi
   done < "$OSINSTALLGUI_LOCALES_FILE"
   write_log "Successfully preloaded locales."
-  echo "20" >&"${preloaderprogress[1]}"
+  echo "25" >&"${preloaderprogress[1]}"
   # Get a list of all supported keymaps.
   write_log "Preloading console keymaps."
   local keymapsavailable=()
@@ -319,7 +319,7 @@ preloader() {
     done
   done
   write_log "Successfully preloaded console keymaps."
-  echo "40" >&"${preloaderprogress[1]}"
+  echo "50" >&"${preloaderprogress[1]}"
   # Get a list of all supported X11 keymaps (layouts, variants, descriptions).
   write_log "Preloading X11 keymaps."
   local x11layouts=() x11variants=() x11descriptions=()
@@ -364,20 +364,7 @@ preloader() {
     fi
   done
   write_log "Successfully preloaded X11 keymaps."
-  echo "60" >&"${preloaderprogress[1]}"
-  # Get a list of timezones, based on each major region.
-  write_log "Preloading timezones."
-  local utimezones=()
-  for region in $(find /usr/share/zoneinfo -mindepth 1 -maxdepth 1 -type d ! -name right ! -name posix ! -name Etc ! -name Brazil ! -name Canada ! -name Chile ! -name Mexico ! -name US -exec basename {} \; | sort -u); do
-    # Find each city within this region.
-    for timezone in $(find /usr/share/zoneinfo/"$region" -mindepth 1 -maxdepth 1 -type f | sed 's|^/usr/share/zoneinfo/||'); do
-      # Add it to the list of timezones, getting the UTC offset.
-      # Use a sed to ensure "UTC" is prepended to every entry.
-      utimezones+=("$timezone" "$(TZ="$timezone" date +%z | sed -e 's/-/UTC-/' -e 's/+/UTC+/')")
-    done
-  done
-  write_log "Succesfully preloaded timezones."
-  echo "80" >&"${preloaderprogress[1]}"
+  echo "75" >&"${preloaderprogress[1]}"
   # Sort each set of entries by description.
   # Store them into the normal/global (non-u) variable names.
   write_log "Sorting all sets of entries by their descriptions."
@@ -387,11 +374,10 @@ preloader() {
   readarray -t keymapscore < <(helper_sortentries "${ukeymapscore[@]}")
   readarray -t x11keys < <(helper_sortentries "${ux11keys[@]}")
   readarray -t x11keyscore < <(helper_sortentries "${ux11keyscore[@]}")
-  readarray -t timezones < <(SORTTZ=1 helper_sortentries "${utimezones[@]}")
   write_log "Successfully sorted all sets of entries by their descriptions."
   echo "100" >&"${preloaderprogress[1]}"
   # Export needed global variables from this preloader function.
-  export locales localescore keymaps keymapscore x11keys x11keyscore timezones
+  export locales localescore keymaps keymapscore x11keys x11keyscore
 }
 
 # Stage functions.
@@ -475,16 +461,41 @@ stage_x11key() {
   stage_inc
 }
 stage_timezone() {
+  # Get a list of regions, filtering out non-Continents and non-Oceans.
+  local tzregions=()
+  for tzregion in $(find /usr/share/zoneinfo -mindepth 1 -maxdepth 1 -type d ! -name right ! -name posix ! -name Etc ! -name Brazil ! -name Canada ! -name Chile ! -name Mexico ! -name US -exec basename {} \; | sort -u); do
+    # Specify whether regions are continents or oceans, to avoid confusion.
+    local tzregdesc
+    case "$tzregion" in
+      "Arctic"|"Atlantic"|"Indian"|"Pacific") tzregdesc="Ocean" ;;
+      *) tzregdesc="Continent" ;;
+    esac
+    tzregions+=("$tzregion" "$tzregdesc")
+  done
   # Let the user decide which region are in, before finding the cities.
-  local choice_tz="$(yad_menu "Timezone Setup" "Please select the timezone which best corresponds to your geographical location. Note that these are sorted by their offsets from UTC (Universal Coordinated Time), with daylight saving time accounted for (if applicable)." "${timezones[@]}")"
-  choice_tz="${choice_tz%%|*}"
-  # Go back to the previous stage if the user backs out.
-  if test -z "$choice_tz"; then
+  local choice_tzregion="$(yad_menu "Timezone Setup" "Please select the region which best corresponds to your geographical location." "${tzregions[@]}")"
+  choice_tzregion="${choice_tzregion%%|*}"
+  # Go back to the previous stage if the user backed out.
+  if test -z "$choice_tzregion"; then
     stage_dec
     return
   fi
-  # Mark this selected timezone for later use.
-  export tgttimezone="$choice_tz"
+  # Get a list of cities corresponding to the selected region.
+  local utzcities=()
+  for tzcity in $(find /usr/share/zoneinfo/"$choice_tzregion" -mindepth 1 -maxdepth 1 -type f -exec basename {} \; | sort -u); do
+    # Display the city with its UTC offset for the description.
+    utzcities+=("$tzcity" "$(TZ="$choice_tzregion/$tzcity" date +%z | sed -e 's/-/UTC-/' -e 's/+/UTC+/')")
+  done
+  # Sort entries by UTC offset.
+  local tzcities=()
+  readarray -t tzcities < <(SORTTZ=1 helper_sortentries "${utzcities[@]}")
+  # Let the user decide which city they are in from their selected region.
+  local choice_tzcity="$(yad_menu "Timezone Setup" "Please select the city from $choice_tzregion which best corresponds to your geographical location. Note that the UTC offsets, displayed in the right-hand column, will account for daylight saving time where applicable." "${tzcities[@]}")"
+  choice_tzcity="${choice_tzcity%%|*}"
+  # Start again from region selection if the user backs out.
+  test ! -z "$choice_tzcity" || return
+  # Mark this timezone for later use.
+  export tgttimezone="$choice_tzregion/$choice_tzcity"
   # Move on to the next stage.
   stage_inc
 }
@@ -1440,7 +1451,7 @@ stage_dec() {
 }
 
 # Export variables that will be set by preloader.
-export locales=() localescore=() keymaps=() keymapscore=() x11keys=() x11keyscore=() timezones=()
+export locales=() localescore=() keymaps=() keymapscore=() x11keys=() x11keyscore=()
 
 # Run preloader function to get locales, keymaps and timezones.
 preloader

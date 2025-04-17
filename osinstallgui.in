@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # osinstallgui version @@VERSION@@ - Copyright (C) 2025 Daniel Massey.
-# Rewrite of installation program originally from MassOS, now with GTK3 GUI.
+# Extremely fast and minimal GUI installer for GNU/Linux operating systems.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

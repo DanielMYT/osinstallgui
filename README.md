@@ -1,41 +1,44 @@
 # osinstallgui
-Rewrite of installation program originally from MassOS, now with GTK3 GUI.
-
-# IMPORTANT NOTICE
-osinstallgui is currently in an **experimental development phase**, and will
-remain in this state until version **1.0.0** is released. See the
-**version.txt** file to check the current version (all **0.x.x** versions will
-be experimental). The [FAQ document](FAQ.md) has more information about how the
-program is and will be versioned.
-
-It should go without saying that this is an operating system installation tool.
-As such, it needs to perform operations on storage drives and partitions,
-including erasing, partitioning, and formatting. Although every published
-version of the software has been tested, we cannot guarantee it will be fully
-bug-free. Therefore, you should ensure all your important data is backed up,
-and the program is only used in contexts where you would be capable of
-recovering from a potential (albeit highly unlikely) loss of data. The
-author(s) of the software assume no liability any data loss or other undesired
-consequences which may arise from use of the software.
+Extremely fast and minimal GUI installer for GNU/Linux operating systems.
 
 # Information
-This is a full rewrite of the installation program originally from MassOS.
+**osinstallgui** is an extremely fast and minimal GUI installer for GNU/Linux
+operating systems written entirely in Bash. It makes use of **yad** to provide
+an intuitive dialog-based GTK3 graphical interface, which aims to be fast,
+intuitive, and no-nonsense. **osinstallgui** has also been designed to be
+easily adaptable and customisable, to allow it to be used by almost any
+GNU/Linux distribution.
 
-It now uses **yad** instead of **dialog**, to provide a GTK3 GUI, instead of
-being TUI/ncurses-based.
+**osinstallgui** was originally created in December 2024, as a full rewrite of
+the TUI-based installation program from MassOS, using GTK3-based **yad**
+instead of ncurses-based **dialog**. However, it has also been redesigned
+and reimagined from the ground-up to be more distribution-independent, through
+the use of a single well-documented configuration file which can be customised
+to suit the needs of other distribution maintainers. The underlying logic has
+also been completely revamped, so as to make the program more reliable under
+the hood, as well as easier to maintain.
 
-It has also been redesigned from the ground-up to be more
-distribution-independent, through the use of a configuration file which can be
-customised by distribution maintainers.
+**osinstallgui** is the defacto installation program used in MassOS, as of the
+development of MassOS being picked up in January 2025.
 
-Lastly, the underlying code has been significantly improved, and now uses much
-more robust state-machine-based logic instead of the previous mess.
+# Development Status
+As of **April 2025**, **osinstallgui** is still in development. Some features
+are not yet present, and some functionality is in the process of being added or
+improved. However, the installer itself is usable and should be mostly stable
+and bug-free.
+
+All additional functionality we want to be present in **osinstallgui**, and are
+continuously working on implementing, is expected to be present when the
+project gets its first **1.x.x** release. The current versions of the software
+are given as **0.x.x**, to indicate that they are pre-releases and may be
+subject to change at short notice. The [FAQ document](FAQ.md) has more
+information about how **osinstallgui** is and will be versioned.
 
 # Dependencies
 Please note that all dependencies listed here use their upstream package names.
-Many distros like to package libraries, services and utilities separately.
-Unless otherwise stated, when a package is listed here, it is referring to the
-ENTIRE package, including its command-line utilities.
+Many distros package libraries, services and utilities separately. Unless
+otherwise stated, when a package is listed here, it is referring to the ENTIRE
+package, but particularly its command-line utilities.
 
 ## Required dependencies
 - **bash**, to run the program.
@@ -69,8 +72,9 @@ ENTIRE package, including its command-line utilities.
   Requires `OSINSTALLGUI_USER_PWSCORE` to be set to `1` in the osinstallgui
   configuration file. It only really makes sense to use if your distro's build
   of shadow was configured to use libcrack, so as to be consistent with the
-  behaviour of `passwd`.
-- **systemd**, for finding available keymaps using `localectl`, as an
+  behaviour of `passwd`. Using this option may annoy "those" users who for some
+  reason are completely incapable of setting and using semi-secure passwords.
+- **systemd**, for finding available keymaps using `localectl`, as a faster
   alternative to manually searching through system files. If present, you can
   also set the `OSINSTALLGUI_KEYMAPS_SYSTEMD` option to decide whether you want
   `localectl` to be used or not.
@@ -166,3 +170,6 @@ possible that the program does not yet have a failsafe to gracefully deal with
 your specific misconfiguration - if this is the case, please open an issue on
 the GitHub repository and ensure you include the contents of the aforementioned
 log file.
+
+Please also see the [FAQ document](FAQ.md), which lists various known issues
+that could occur, and potential solutions/workarounds for them.

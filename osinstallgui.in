@@ -551,32 +551,19 @@ stage_usersetup() {
   # Filter input for only alphanumeric characters and spaces.
   fullname="$(echo "$fullname" | tr -cd '[:alnum:] [:space:]')"
   # Filter username for only the first word (i.e., forename), and lowercase.
-  local username="$(echo "$fullname" | cut -d' ' -f1 | tr '[:upper:]' '[:lower:]')"
-  # Behaviour for username input will depend on whether fullname was set.
-  if test ! -z "$fullname"; then
-    # Ask if the user is OK with the default username from fullname being used.
-    if ! yad_prompt "User Setup" "You entered '$fullname' as your full name. The automatically generated username for this would be '$username'. Would you like to keep this default? Answer 'NO' if you wish to set a custom username."; then
-      # Ask for the custom username.
-      username="$(yad_input "User Setup" "Please enter the username you wish to use for $fullname's account. The username must NOT contain spaces, and must ONLY consist of alphanumeric characters. Leave it blank to use the default of '$username'.")"
-      if test -z "$username"; then
-        # This input was not mandatory because fullname was set, so revert it.
-        username="$(echo "$fullname" | cut -d' ' -f1 | tr '[:upper:]' '[:lower:]')"
-      else
-        # Filter again for the newly entered username.
-        username="$(echo "$username" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
-      fi
-    fi
-  else
-    # No fullname was specified, so username input will be mandatory.
-    username="$(yad_input "User Setup" "Please enter the username you wish to use for the new account. The username must NOT contain spaces, and must ONLY consist of alphanumeric characters. Since you did not specify a full name, this field cannot be left blank.")"
-    test $? -eq 0 || return
-    if test -z "$username"; then
-      # User didn't listen, make them face consequences.
-      yad_message "Error" "The username field cannot be left blank because you did not previously specify a full name."
-      return
-    fi
-    # Filter the input once again.
-    username="$(echo "$username" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
+  local usernameauto="$(echo "$fullname" | cut -d' ' -f1 | tr '[:upper:]' '[:lower:]')"
+  # Display the input box using the auto-generated username as the placeholder.
+  # It will of course be blank if the full name entry was skipped.
+  local username
+  username="$(yad_input "User Setup" "Please enter the username you wish to use for the account. It may only consist of lowercase alphanumeric characters, and must not contain spaces." "$usernameauto")"
+  # Start again if the user backed out.
+  test $? -eq 0 || return
+  # Filter input as necessary.
+  username="$(echo "$username" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
+  # Start again (after displaying a message) if the field was left blank.
+  if test -z "$username"; then
+    yad_message "Error" "The username field must not be left blank."
+    return
   fi
   # Now set the global values and move on to the user password stage.
   export tgtusername="$username" tgtfullname="$fullname"

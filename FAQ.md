@@ -164,7 +164,7 @@ flash drive.
 You see, when you are installing to a removable drive, you expect that, after
 the initial installation is done, you will be able to move that drive to any
 system and boot the same OS (with all your files and apps preserved) on any
-other computer. And unfortunately for you, this will be inconvenient (opr maybe
+other computer. And unfortunately for you, this will be inconvenient (or maybe
 impossible) if the GRUB bootloader has been installed in "Internal" mode.
 Because the only (trivial) way to boot the system is using that same boot-order
 entry in the NVRAM, which, as previously mentioned, is part of the system's

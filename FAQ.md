@@ -276,13 +276,13 @@ In the mean time, all we can say is, again, just be patient! If you suspect
 something might've gone really wrong, then you may inspect the **osinstallgui**
 log file, which is available at the following directory:
 ```
-/tmp/osinstallgui<xyz...>/osinstallgui.log
+/tmp/osinstallgui.<XXXXXX>/osinstallgui.log
 ```
-Where `<xyz...>` is a long string of numbers roughly corresponding to a
-timestamp of when **osinstallgui** was launched. You may run `ls /tmp` to
-check what the full directory is named, or alternatively check the "About"
-screen of **osinstallgui**, which will report its working directory. In any
-case, the `osinstallgui.log` file will be within that directory.
+Where `<XXXXXX>` is a set of 6 random characters, designed to ensure the
+directory is unique. You may run `ls /tmp` to check what the full directory is
+named, or alternatively check the "About" screen of **osinstallgui**, which
+will report its working directory. In any case, the `osinstallgui.log` file
+will be within that directory.
 
 The configuration file will tell you where the installer currently is, if it
 is not giving any graphical output. If more text is subsequently appended to

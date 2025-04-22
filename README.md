@@ -1,6 +1,8 @@
 # osinstallgui
 Extremely fast and minimal GUI installer for GNU/Linux operating systems.
 
+![](osinstallgui.png)
+
 # Information
 **osinstallgui** is an extremely fast and minimal GUI installer for GNU/Linux
 operating systems written entirely in Bash. It makes use of **yad** to provide

@@ -1343,9 +1343,6 @@ stage_finish() {
   export stage=-1
 }
 
-# Get a timestamp for naming logs and temporary files/directories.
-export stamp="$(date "+%Y%m%d%H%M%S%N")"
-
 # Determine our host's name.
 export osname="$(grep -sm1 "^PRETTY_NAME=" /etc/os-release | cut -d= -f2 | sed 's/"//g')"
 if test -z "$osname"; then
@@ -1353,8 +1350,7 @@ if test -z "$osname"; then
 fi
 
 # Create a temporary directory for us to use.
-export workdir="/tmp/osinstallgui$stamp"
-mkdir -p "$workdir"
+export workdir="$(mktemp -d /tmp/osinstallgui.XXXXXX)"
 
 # Set up the log file.
 export log="$workdir/osinstallgui.log"
@@ -1380,6 +1376,11 @@ for val in "$OSINSTALLGUI_ROOTFS" "$OSINSTALLGUI_INITRAMFS_CMD" "$OSINSTALLGUI_L
     die "$inv cannot run due to one or more missing config value(s)."
   fi
 done
+
+# Do not proceed if the rootfs file does not exist.
+if test ! -f "$OSINSTALLGUI_ROOTFS"; then
+  die "$inv cannot run because the configured rootfs file does not exist."
+fi
 
 # Set up defaults for configuration values which are not mandatory.
 test ! -z "$OSINSTALLGUI_ALLOW_BTRFS" || OSINSTALLGUI_ALLOW_BTRFS=1

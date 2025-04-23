@@ -711,10 +711,9 @@ stage_diskpar() {
         fi
       fi
       # Ask if btrfs should be used, if supported and enabled in configuration.
+      local btrfsuse=0
       if test "$OSINSTALLGUI_ALLOW_BTRFS" = "1" && which mkfs.btrfs &>/dev/null && yad_prompt "Erase Disk" "Would you like to use btrfs for the root partition? This is recommended, unless you have a specfic reason to prefer the traditional ext4."; then
         local btrfsuse=1
-      else
-        local btrfsuse=0
       fi
       # Ask if the user wants swap space.
       if yad_prompt "Erase Disk" "Swap is a reserved area on the disk which can act as an emergency RAM backup in case the system RAM becomes full. Would you like to make use of a swap file?"; then
@@ -770,42 +769,21 @@ stage_diskpar() {
         yad_message "Error" "Failed to partition the disk $diskselection (the operation didn't create any partitions). A log file can be found at $log."
         return
       fi
-      # Find the label for the root partition.
-      if test "$osname" = "An OS without a name"; then
-        # Use 'Linux' if it has no name.
-        local rootlabel="Linux"
-      else
-        # Use the first word in the OS name.
-        local rootlabel="$(echo "$osname" | cut -d' ' -f1)"
-      fi
-      # Format partitions.
-      if test $btrfsuse -eq 1; then
-        helper_format "${createdparts[-1]}" btrfs "$rootlabel"
-        if test $? -ne 0; then
-          yad_message "Error" "Failed to format the root filesystem ${createdparts[-1]} as btrfs. A log file can be found at $log."
-          return
-        fi
-      else
-        helper_format "${createdparts[-1]}" ext4 "$rootlabel"
-        if test $? -ne 0; then
-          yad_message "Error" "Failed to format the root filesystem ${createdparts[-1]} as ext4. A log file can be found at $log."
-          return
-        fi
-      fi
-      if test $efimode -eq 1; then
-        helper_format "${createdparts[0]}" vfat "EFI SYSTEM"
-        if test $? -ne 0; then
-          yad_message "Error" "Failed to format the EFI System Partition ${createdparts[0]} as vfat. A log file can be found at $log."
-          return
-        fi
-      fi
       # Set up the global variables, now we are done with this process.
       export tgtdisk="$diskselection"
       export tgtroot="${createdparts[-1]}"
       test $efimode -ne 1 || export tgtefi="${createdparts[0]}"
+      # Save the filesystem used for the root partition.
+      if test $btrfsuse -eq 1; then
+        export tgtfs="btrfs"
+      else
+        export tgtfs="ext4"
+      fi
+      # We by default will need to format the EFI partition.
+      export tgtefiformat=1
       # Save the swap size.
       export tgtswap="$swapsize"
-      # Move on to the next stage.
+      # Move on to the partition formatting stage.
       stage_inc
       ;;
     "2")
@@ -862,10 +840,9 @@ stage_diskpar() {
         fi
       fi
       # Ask whether they want btrfs or ext4, if allowed.
+      local btrfsuse=0
       if test "$OSINSTALLGUI_ALLOW_BTRFS" = "1" && which mkfs.btrfs &>/dev/null && yad_prompt "Partition Setup" "Would you like to use btrfs for the root partition? This is recommended, unless you have a specfic reason to prefer the traditional ext4."; then
-        local btrfsuse=1
-      else
-        local btrfsuse=0
+        btrfsuse=1
       fi
       # Prompt for selection of an EFI partition if we are in UEFI mode.
       if test $efimode -eq 1; then
@@ -909,14 +886,6 @@ stage_diskpar() {
           swapsize="2G"
         fi
       fi
-      # Determine the label for the root filesystem.
-      if test "$osname" = "An OS without a name"; then
-        # Use 'Linux' if it has no name.
-        local rootlabel="Linux"
-      else
-        # Use the first word in the OS name.
-        local rootlabel="$(echo "$osname" | cut -d' ' -f1)"
-      fi
       # Final warning before we format.
       local formatinfo=""
       # Whether or not EFI partition needs formatting.
@@ -931,31 +900,18 @@ stage_diskpar() {
       fi
       # Display the message, go back if the user backs out.
       yad_prompt "Partition Setup" "The following partition(s) are now going to be formatted, and any existing data will be PERMANENTLY DELETED. This action is IRREVERSIBLE. Are you sure you want to proceed?\n\n$formatinfo" || return
-      # Format the partitions now.
-      if test $btrfsuse -eq 1; then
-        helper_format "$rootparselection" btrfs "$rootlabel"
-        if test $? -ne 0; then
-          yad_message "Error" "Failed to format the root filesystem $rootparselection as btrfs. A log file can be found at $log."
-          return
-        fi
-      else
-        helper_format "$rootparselection" ext4 "$rootlabel"
-        if test $? -ne 0; then
-          yad_message "Error" "Failed to format the root filesystem $rootparselection as ext4. A log file can be found at $log."
-          return
-        fi
-      fi
-      if test $efimode -eq 1 && test $efiformat -eq 1; then
-        helper_format "$efiparselection" vfat "EFI SYSTEM"
-        if test $? -ne 0; then
-          yad_message "Error" "Failed to format the EFI System Partition $efiparselection as vfat. A log file can be found at $log."
-          return
-        fi
-      fi
       # Save the partition selections for the rest of the installation.
       export tgtroot="$rootparselection" tgtefi="$efiparselection"
+      # Save whether or not we are formatting as btrfs or ext4.
+      if test $btrfsuse -eq 1; then
+        export tgtfs="btrfs"
+      else
+        export tgtfs="ext4"
+      fi
       # Save the swap size.
       export tgtswap="$swapsize"
+      # Save whether or not we are going to format the EFI system partition.
+      export tgtefiformat=$efiformat
       # Proceed to the next stage.
       stage_inc
       ;;
@@ -981,6 +937,39 @@ stage_diskpar() {
       stage_dec
       ;;
   esac
+}
+stage_format() {
+  # Go back a stage if the root partition is unset.
+  if test -z "$tgtroot"; then
+    stage_dec
+    return
+  fi
+  sync
+  # Determine the label for the root filesystem, based on OS name.
+  local rootlabel="$(echo "$osname" | cut -d' ' -f1)"
+  # Try to format the partitions. Step back a stage if any format fails.
+  if test "$tgtfs" = "btrfs"; then
+    if ! helper_format "$tgtroot" btrfs "$rootlabel"; then
+      yad_message "Error" "Failed to format the root filesystem $tgtroot as btrfs. A log file can be found at $log."
+      stage_dec
+      return
+    fi
+  else
+    if ! helper_format "$tgtroot" ext4 "$rootlabel"; then
+      yad_message "Error" "Failed to format the root filesystem $tgtroot as ext4. A log file can be found at $log."
+      stage_dec
+      return
+    fi
+  fi
+  if test $efimode -eq 1 && test $tgtefiformat -eq 1; then
+    if ! helper_format "$tgtefi" vfat "EFI SYSTEM"; then
+      yad_message "Error" "Failed to format the EFI System Partition $tgtefi as vfat. A log file can be found at $log."
+      stage_dec
+      return
+    fi
+  fi
+  # Move on to the next stage.
+  stage_inc
 }
 stage_mount() {
   # Ensure we know which partitions we are working with.
@@ -1346,7 +1335,8 @@ stage_finish() {
 # Determine our host's name.
 export osname="$(grep -sm1 "^PRETTY_NAME=" /etc/os-release | cut -d= -f2 | sed 's/"//g')"
 if test -z "$osname"; then
-  export osname="an OS with no name"
+  # Use 'Linux' as a fallback, since we couldn't determine the host's name.
+  export osname="Linux"
 fi
 
 # Create a temporary directory for us to use.
@@ -1411,7 +1401,7 @@ check_dep mkfs.fat dosfstools
 check_dep unsquashfs squashfs-tools
 
 # Disk and partition variables need to be accessed by the whole program.
-export tgtdisk="" tgtroot="" tgtefi="" tgtswap=""
+export tgtdisk="" tgtroot="" tgtfs="" tgtefi="" tgtefiformat=0 tgtswap=""
 
 # Other global setup variables which need to be accessed by the whole program.
 export tgtlocale="" tgtkeymap="" tgtx11key="" tgttimezone="" tgtrootpw="" tgtusername="" tgtfullname="" tgtuserpw="" tgthostname=""
@@ -1458,13 +1448,14 @@ while test $stage -ge 0; do
     7) stage_userpw ;;
     8) stage_hostname ;;
     9) stage_diskpar ;;
-    10) stage_mount ;;
-    11) stage_swapsetup ;;
-    12) stage_installation ;;
-    13) stage_postinstall ;;
-    14) stage_systemconfig ;;
-    15) stage_initramfs ;;
-    16) stage_bootloader ;;
-    17) stage_finish ;;
+    10) stage_format ;;
+    11) stage_mount ;;
+    12) stage_swapsetup ;;
+    13) stage_installation ;;
+    14) stage_postinstall ;;
+    15) stage_systemconfig ;;
+    16) stage_initramfs ;;
+    17) stage_bootloader ;;
+    18) stage_finish ;;
   esac
 done

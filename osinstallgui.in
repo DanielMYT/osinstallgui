@@ -628,15 +628,16 @@ stage_hostname() {
     stage_dec
     return
   fi
+  # Filter out special characters from the hostname, and truncate to 255.
+  hostname="$(echo "$hostname" | tr -cd '[:alnum:] [:space:] -' | sed 's/ /-/g' | cut -c1-255)"
   # Ensure the hostname is not empty.
   if test -z "$hostname"; then
     # Complain and try again.
     yad_message "Error" "The system hostname must not be left blank."
     return
   fi
-  # Save our work and also filter like we did for the default hostname before.
-  # This time we also need to truncate to 255 characters, due to the limit.
-  export tgthostname="$(echo "$hostname" | tr -cd '[:alnum:] [:space:] -' | sed 's/ /-/g' | cut -c1-255)"
+  # Save our work.
+  export tgthostname="$hostname"
   # Move on to the next stage.
   stage_inc
 

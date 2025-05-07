@@ -1298,13 +1298,18 @@ stage_bootloader() {
     echo "$?" > "$workdir"/.status_grub_a
     # Tell yad that we are half done.
     echo "50"
+    # Re-run grub-install with the --removable flag if no fallback exists.
+    if test $efimode -eq 1 && test ! -f "$tgtpath"/boot/efi/EFI/BOOT/BOOTX64.EFI; then
+      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install $grub_args --removable
+      echo "$?" > "$workdir"/.status_grub_a1
+    fi
     # GRUB configuration step.
     helper_chroot_advanced "$tgtpath" /usr/bin/env grub-mkconfig -o /boot/grub/grub.cfg
     echo "$?" > "$workdir"/.status_grub_b
     # Now tell yad that we are done.
     echo "100"
   } | yad --progress --title="Installation ⎯ $inv" --text="Installing the GRUB bootloader, please be patient." --percentage=0 --auto-close --no-buttons --no-escape --width=600 --height=100
-  if test "$(cat "$workdir"/.status_grub_a 2>&1)" != "0" || test "$(cat "$workdir"/.status_grub_b 2>&1)" != "0"; then
+  if test "$(cat "$workdir"/.status_grub_a 2>&1)" != "0" || test "$(cat "$workdir"/.status_grub_b 2>&1)" != "0" || { test -f "$workdir"/.status_grub_a1 && test "$(cat "$workdir"/.status_grub_a1 2>&1)" != "0"; }; then
     # Something went wrong, complain about the problem.
     write_log "Bootloader installation using 'grub-install $grub_args' failed."
     yad_message "Error" "The GRUB bootloader installation failed. Manual intervention will likely be needed to correct this problem and make your system bootable. A log file can be found at $log."

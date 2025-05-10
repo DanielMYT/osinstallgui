@@ -659,7 +659,7 @@ stage_diskpar() {
   fi
   # Detect all real disks, filtering out the installation media if needed.
   local disks=()
-  readarray -t disks < <(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort | grep -vx "$imdisk")
+  readarray -t disks < <(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name fd\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort | grep -vx "$imdisk")
   # Throw an error if no disks were found.
   if test ${#disks[@]} -eq 0; then
     yad_message "Error" "No physical disks were found on your system. If your internal drive is failing to be detected, please ensure all of the following are true:\n\n1) Windows Bitlocker drive encryption is disabled.\n\n2) The 'SATA Mode' or 'Storage Mode' option in your BIOS is set to 'AHCI'.\n\n3) All options in your BIOS relating to 'RAID', 'Intel RST', 'Intel Optane', 'Intel Smart Storage', etc. are DISABLED.\n\nIf you need help, please look at the FAQ document in the osinstallgui source repository, and/or approach the support channel(s) of your distribution."

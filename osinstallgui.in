@@ -737,9 +737,8 @@ stage_diskpar() {
       sync; wipefs -af "$diskselection" &>>"$log"
       sync; dd if=/dev/zero of="$diskselection" bs=1M count=10 &>>"$log"
       sync; sgdisk -Z "$diskselection" &>>"$log"
+      sync; parprobe &>>"$log"
       write_log "Finished erasing the disk $diskselection."
-      # Sync changes with the kernel.
-      sync; partprobe
       # Decide which partitions to make depending on boot mode and swap choice.
       if test $efimode -eq 1; then
         # UEFI.

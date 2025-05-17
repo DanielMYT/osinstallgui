@@ -1071,8 +1071,11 @@ stage_installation() {
     fi
     write_log "Successfully untarred $OSINSTALLGUI_ROOTFS to $tgtpath."
   fi
-  sync
+  # Set permissions of root directory to 755 manually after extraction.
+  # This avoids world-writable '/' if rootfs lacks root directory metadata.
+  chmod 0755 "$tgtpath" &>/dev/null
   # Now move to the post installation stage.
+  sync
   stage_inc
 }
 stage_postinstall() {

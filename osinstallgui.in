@@ -1375,9 +1375,17 @@ for val in "$OSINSTALLGUI_ROOTFS" "$OSINSTALLGUI_INITRAMFS_CMD" "$OSINSTALLGUI_L
   fi
 done
 
-# Do not proceed if the rootfs file does not exist.
+# Do not proceed if the rootfs file (or alternative rootfs) does not exist.
 if test ! -f "$OSINSTALLGUI_ROOTFS"; then
-  die "$inv cannot run because the configured rootfs file does not exist."
+  if test ! -f "$OSINSTALLGUI_ROOTFS_ALT"; then
+    die "$inv cannot run because the configured rootfs file does not exist."
+  else
+    # Switch to alternate rootfs.
+    write_log "Using alternative rootfs file $OSINSTALLGUI_ROOTFS_ALT."
+    OSINSTALLGUI_ROOTFS="$OSINSTALLGUI_ROOTFS_ALT"
+  fi
+else
+  write_log "Using primary rootfs file $OSINSTALLGUI_ROOTFS."
 fi
 
 # Set up defaults for configuration values which are not mandatory.

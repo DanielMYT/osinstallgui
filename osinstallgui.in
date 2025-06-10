@@ -384,14 +384,14 @@ preloader() {
 stage_mainmenu() {
   # Let the user choose what they want to do on the main menu.
   local choice="$(yad_menu "Main Menu" "Welcome to $osname! What would you like to do?" \
-  "Install" "Begin the installation of $osname onto your system." \
+  "Install" "Begin the installation of $osname." \
   "About" "See information about this installation program." \
   "Restart" "Restart the system." \
   "Shutdown" "Shut down the system." \
   "Exit" "Exit this installation program.")"
   case "${choice%%|*}" in
     "Install") stage_inc ;;
-    "About") yad_message "About" "This is osinstallgui version $ver, running on $osname, accessing data from @@CONFPATH@@, and working out of the directory $workdir.\n\nosinstallgui is a full rewrite of the installation program originally from MassOS, now yad-based (GTK3 GUI) as opposed to dialog-based (Ncurses TUI). It has also been redesigned from the ground-up to be more distribution-independent, and now uses much more robust state-machine-based logic under the hood.\n\nosinstallgui was created by Daniel Massey, and is licensed under the GNU General Public License version 3 or later. More information about the project, along with its source code, can be found at <a href='https://github.com/DanielMYT/osinstallgui'>https://github.com/DanielMYT/osinstallgui</a>." ;;
+    "About") yad_message "About" "This is osinstallgui version $ver, running on $osname, accessing data from @@CONFPATH@@, and working out of $workdir.\n\nosinstallgui is an extremely fast and minimal GUI installer for GNU/Linux operating systems.\n\nosinstallgui was created by Daniel Massey and is licensed under the GNU GPLv3+. Visit go.dmassey.net/oig for more info." ;;
     "Restart") shutdown -r now ;;
     "Shutdown") shutdown -h now ;;
     "Exit"|"") exit 0 ;;
@@ -662,7 +662,7 @@ stage_diskpar() {
   readarray -t disks < <(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name fd\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort | grep -vx "$imdisk")
   # Throw an error if no disks were found.
   if test ${#disks[@]} -eq 0; then
-    yad_message "Error" "No physical disks were found on your system. If your internal drive is failing to be detected, please ensure all of the following are true:\n\n1) Windows Bitlocker drive encryption is disabled.\n\n2) The 'SATA Mode' or 'Storage Mode' option in your BIOS is set to 'AHCI'.\n\n3) All options in your BIOS relating to 'RAID', 'Intel RST', 'Intel Optane', 'Intel Smart Storage', etc. are DISABLED.\n\nIf you need help, please look at the FAQ document in the osinstallgui source repository, and/or approach the support channel(s) of your distribution."
+    yad_message "Error" "No physical disks were found on your system. If your internal drive is failing to be detected, please visit go.dmassey.net/ogf for troubleshooting tips."
     # Go back to the main menu, since a reboot will probably be needed.
     export stage=0
     return
@@ -847,7 +847,7 @@ stage_diskpar() {
       # Prompt for selection of an EFI partition if we are in UEFI mode.
       if test $efimode -eq 1; then
         # Show an information message.
-        yad_message "Partition Setup" "Your system is booted in UEFI mode. A small FAT32 (vfat) partition of around 100MiB-500MiB, separate to the root partition, must therefore exist on the disk, to be used for the bootloader installation. It can be shared between all OSes in a dual-boot setup (without needing to be re-formatted), and it may be on a different disk to the one containing the selection for the root partition. If you need help with this, please refer to the FAQ document in the osinstallgui source repository."
+        yad_message "Partition Setup" "Your system is booted in UEFI mode. A separate FAT32 (vfat) partition of around 100MiB-500MiB must therefore exist, to store the bootloader files. If it is used by another OS, it can be shared with MassOS without needing to be re-formatted. Visit go.dmassey.net/ogf for more information."
         # Ask which EFI partition to use.
         local choiceefipar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the EFI system partition. It must differ from the selection for the root partition." "${partentries[@]}")"
         # Go back if the user backed out.
@@ -1280,7 +1280,7 @@ stage_bootloader() {
     choice="${choice%%|*}"
     if test -z "$choice" || test "$choice" = "Help"; then
       # Show the help message.
-      yad_message "Bootloader" "The GRUB UEFI bootloader can be installed in either 'Internal' or 'Removable' mode, to make it easier to boot depending on which type of disk you are installing $osname to.\n\nChoose 'Internal' for all internal disks or any disks that are intended to remain connected to the same system. This includes for dual-booting.\n\nChoose 'Removable' if you are installing $osname to a removable drive, such a portable HDD/SSD or a USB flash drive. This will ensure the drive can be booted on any system, and is not locked to the system it was installed from.\n\nPlease consult the FAQ in the osinstallgui source repository for more information, as well as the rationale behind the inclusion of this option in osinstallgui."
+      yad_message "Bootloader" "The GRUB UEFI bootloader can be installed in either 'Internal' or 'Removable' mode, to make it easier to boot depending on which type of disk you are installing $osname to.\n\nChoose 'Internal' for all internal disks or any disks that are intended to remain connected to the same system. This includes for dual-booting.\n\nChoose 'Removable' if you are installing $osname to a removable drive, such a portable HDD/SSD or a USB flash drive. This will ensure the drive can be booted on any system, and is not locked to the system it was installed from.\n\nVisit go.dmassey.net/ogf for more information, as well as the rationale behind the inclusion of this option in osinstallgui."
       # Start this choice again.
       return
     elif test "$choice" = "Removable"; then

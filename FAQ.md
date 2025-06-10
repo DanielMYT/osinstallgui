@@ -143,6 +143,44 @@ it. Multiple UEFI bootloaders (for different operating systems) can share the
 same EFI partition, and will not conflict with each other, and the partition
 will not need to be re-formatted if it is already **FAT32**.
 
+## No physical disks were found
+Here are the following most likely causes of your internal disk failing to be
+detected, including how you may be able to fix them.
+
+### SATA mode not set to AHCI
+Your system may default to setting the **SATA Mode** or **Storage Mode** of
+internal disks to **RAID** or **Intel RST**. This will cause them to be
+unusable by GNU/Linux. To change it, you need to enter your BIOS settings
+(usually by pressing **ESC**, **DEL**, or one of the function keys on startup).
+You can also automatically reboot to the firmware setup on UEFI systems using
+the following command:
+```
+systemctl reboot --firmware-setup
+```
+
+The option to change the SATA mode may be under **Advanced Settings**. Once
+you've found it and changed it, you can save and exit the BIOS settings (often
+by pressing the **F10** key), and the disk should now display in
+**osinstallgui**.
+
+Note that there may also be other RAID or RST-related options in the BIOS. If
+changing the SATA mode alone doesn't fix it, then ensure those other options
+are also turned off.
+
+### Windows Bitlocker drive encryption
+Modern versions of Windows have **Bitlocker** (or a similar disk encryption
+system) enabled by default. In some cases, this can cause your internal drive
+to fail to be detected. Since Bitlocker drive encryption is a security measure,
+especially on portable devices like laptops which may be stolen, you may not
+want to disable it. If this is the case, we recommend instead installing on a
+different internal disk if you have one, or a portable SSD/HDD if you don't.
+
+Note that on the Home edition of Windows, Bitlocker may instead be named
+**Windows Device Encryption** or something similar, and accessible from normal
+Windows settings instead of control panel.
+
+Once Bitlocker is disabled, your disk should now show up.
+
 ## Why am I asked about installing GRUB in Internal or Removable mode?
 The GRUB UEFI bootloader can be installed in either "Internal" or "Removable"
 mode. At the low-level, this is done by omitting or including the `--removable`
@@ -212,6 +250,36 @@ Note that this option is inapplicable to systems booted in Legacy BIOS mode,
 since the Legacy BIOS bootloader always gets installed to the MBR (reserved
 area) of the disk anyway. As a result, you won't be given this option if your
 system is booted in Legacy BIOS mode instead of UEFI.
+
+## There is no Windows boot option after installation for a dual-boot
+There exists a known bug with the **os-prober** package, whereby it is unable
+to detect a Windows installation while in a chroot environment. As a result,
+Windows does not get added as a boot entry to the GRUB menu like it should.
+This is not a bug specific to one distro, and in fact it has been reported on
+many distros, including the following:
+
+- https://www.reddit.com/r/archlinux/comments/10gyqjs/osprober_wont_detect_windows/
+- https://www.reddit.com/r/artixlinux/comments/ldg00f/osprober_not_detecting_windows_in_the_chroot/
+
+Since a chroot environment has to be used during the installation process (as
+the system is not fully installed at that point), there is no way to solve this
+problem. However, you can simply re-run the GRUB bootloader configuration
+command **after** the installation has finished and once you are booted into
+your new system:
+```
+sudo grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+Note that you also need to ensure that (a) the **os-prober** package is
+installed on your system to begin with, and (b) the `/etc/default/grub` file
+contains the following line **uncommented**:
+```
+GRUB_DISABLE_OS_PROBER=false
+```
+
+Assuming both of these are true, Windows should now be detected when re-running
+the `grub-mkconfig` command above, and should be added as an entry to the boot
+menu.
 
 ## The program doesn't run
 A few troubleshooting steps can help you work out why **osinstallgui** doesn't

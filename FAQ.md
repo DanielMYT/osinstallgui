@@ -181,6 +181,59 @@ Windows settings instead of control panel.
 
 Once Bitlocker is disabled, your disk should now show up.
 
+## What is LUKS encryption and do I need it?
+LUKS encryption is a method of encrypting the root filesystem of your new OS
+installation, such that no-one with physical access to the machine can access
+your data without a decryption passphrase created by and only known by you. It
+may also sometimes be referred to as "full disk encryption", but this name is
+misleading, since only the root filesystem of the OS you are installing needs
+to be (and should be) encrypted, thus allowing the rest of the disk to be
+managed by whatever other operating systems may be installed on your system.
+Support for LUKS encryption was added to **osinstallgui** in version `0.8.0`.
+
+Encryption of the data on your operating system, which includes both the system
+files/apps, and the personal files in your home directory, is extremely useful
+and often recommended for portable devices such as laptops, which may be at
+risk of theft. If someone does steal your laptop, and your data is encrypted,
+then the thief will have no way to access that data without knowing your
+encryption passphrase. However, LUKS encryption can also come with some
+downsides. This includes slightly (though often unnoticeable) more overhead
+when performing IO-intensive disk operations, as well as less convenience when
+it comes to performing system recovery or debugging an existing GNU/Linux
+installation from a separate live environment.
+
+### Important notes about LUKS encryption
+- If you select to enable LUKS when prompted by **osinstallgui**, you will be
+  required to create an encryption passphrase. This passphrase does not need to
+  match the root password or user password you set up in a previous step of the
+  installation process, but **SHOULD** be both secure and memorable.
+- You will be required to enter the encryption passphrase every time you boot
+  up the system.
+- If you ever forget the encryption passphrase, your data will be gone forever.
+  Due to the nature of encryption, and its goal of being secure, the **ONLY**
+  way to decrypt your data is by using the same passphrase it was encrypted
+  with. There is no other "recovery" option available.
+
+### Requirements for LUKS support in osinstallgui
+- The **cryptsetup** program must be installed on the system (that is, both the
+  live environment running the installer, and inside the rootfs image that
+  **osinstallgui** will install the full system from). If it is not installed,
+  **osinstallgui** will automatically disable LUKS support at runtime, and
+  therefore not ask the user about whether or not they want to use LUKS.
+- `GRUB_ENABLE_CRYPTODISK="y"` must be set in the file `/etc/default/grub`, and
+  not commented out, which may be the default. This only applies to the rootfs
+  image that **osinstallgui** uses to install the full system. Without it, the
+  GRUB bootloader will be unable to boot from the LUKS-encrypted volumes, thus
+  rendering the new installation unusable.
+- GRUB itself must be patched or have hooks in place to insert the necessary
+  command-line parameters for booting from a LUKS-encrypted volume. The exact
+  parameters needed will depend on the initramfs system in use. But GRUB, in
+  its pure vanilla state, may make use of command-line arguments that are not
+  appropriate for LUKS setups. The patch used in MassOS for dracut can be found
+  [here](https://github.com/MassOS-Linux/MassOS/blob/development/patches/grub-2.12-luksdracut.patch).
+- `OSINSTALLGUI_ALLOW_LUKS` must not be set to `0` in the **osinstallgui**
+  configuration file (either set to `1`, or omitted, which defaults to `1`).
+
 ## Why am I asked about installing GRUB in Internal or Removable mode?
 The GRUB UEFI bootloader can be installed in either "Internal" or "Removable"
 mode. At the low-level, this is done by omitting or including the `--removable`

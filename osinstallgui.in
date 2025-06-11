@@ -737,7 +737,7 @@ stage_diskpar() {
       sync; wipefs -af "$diskselection" &>>"$log"
       sync; dd if=/dev/zero of="$diskselection" bs=1M count=10 &>>"$log"
       sync; sgdisk -Z "$diskselection" &>>"$log"
-      sync; parprobe &>>"$log"
+      sync; partprobe &>>"$log"
       write_log "Finished erasing the disk $diskselection."
       # Decide which partitions to make depending on boot mode and swap choice.
       if test $efimode -eq 1; then
@@ -938,36 +938,97 @@ stage_diskpar() {
       ;;
   esac
 }
+stage_luks() {
+  # Set up the installation for LUKS encryption.
+  if test "$OSINSTALLGUI_ALLOW_LUKS" = "1" && yad_prompt "Encryption Setup" "Would you like to enable disk encryption using LUKS? This will require creating a passphrase which will then need to be typed on every boot. See go.dmassey.net/ogf for more info. If unsure, answer 'NO'."; then
+    # Ask for the LUKS passphrase.
+    local luksphrase1
+    luksphrase1="$(yad_password "Encryption Setup" "Please enter the new encryption passphrase you wish to use. Be aware that if you ever forget this, your data will be as good as gone.")"
+    # Start again if the user backed out.
+    test $? -eq 0 || return
+    # Do not allow the phrase to be empty.
+    if test -z "$luksphrase1"; then
+      yad_message "Error" "The encryption passphrase must not be left blank."
+      return
+    fi
+    # Ask for the phrase again, for confirmation.
+    local luksphrase2
+    luksphrase2="$(yad_password "Encryption Setup" "Please re-type the new encryption passphrase.")"
+    # Start again if the user backed out.
+    test $? -eq 0 || return
+    # Ensure the phrases match.
+    if test "$luksphrase2" != "$luksphrase1"; then
+      yad_message "Error" "The encryption passphrases you entered do not match."
+      return
+    fi
+    # Mark encryption as enabled, and set the global LUKS passphrase.
+    export tgtluks=1
+    export tgtlukspw="$luksphrase1"
+  fi
+  # Move on to the next stage.
+  stage_inc
+}
 stage_format() {
   # Go back a stage if the root partition is unset.
   if test -z "$tgtroot"; then
     stage_dec
     return
   fi
+  # Sync again first, just in case.
   sync
+  # Use coproc, so we can have a progress bar, as format of LUKS takes a while.
+  coproc formatprogress { yad --progress --title="Loading... ⎯ $inv" --text="The partitions are being formatted, please be patient." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100; }
+  # Deal with LUKS encryption support using cryptsetup.
+  if test $tgtluks -eq 1; then
+    # Format to LUKS and open as a mapper device (/dev/mapper/cryptroot).
+    # Note that argon2 is unsupported by GRUB - make sure pbkdf2 is used.
+    # Also use 1M, as it's the best tradeoff between boot speed and security.
+    write_log "Formatting $tgtroot for LUKS encryption."
+    echo -n "$tgtlukspw" | cryptsetup luksFormat "$tgtroot" --type luks2 --pbkdf pbkdf2 --pbkdf-force-iterations 1000000 - &>>"$log"
+    if test $? -ne 0; then
+      write_log "Failed to format $tgtroot for LUKS encryption."
+      yad_message "Error" "Failed to format the root filesystem $tgtroot for LUKS encryption. A log file can be found at $log."
+      stage_dec; stage_dec
+      return
+    fi
+    echo -n "$tgtlukspw" | cryptsetup open "$tgtroot" cryptroot - &>>"$log"
+    if test $? -ne 0; then
+      yad_message "Error" "Failed to open the newly created LUKS-encrypted filesystem. A log file can be found at $log."
+      # Forcibly close the cryptsetup device just in case something weird happened.
+      cryptsetup close cryptroot &>>/dev/null
+      stage_dec; stage_dec
+      return
+    fi
+    # Set tgtroot to /dev/mapper/cryptroot, and then save raw root partition.
+    export tgtluksraw="$tgtroot"
+    export tgtroot="/dev/mapper/cryptroot"
+  fi
+  echo "50" >&"${formatprogress[1]}"
   # Determine the label for the root filesystem, based on OS name.
   local rootlabel="$(echo "$osname" | cut -d' ' -f1)"
   # Try to format the partitions. Step back a stage if any format fails.
   if test "$tgtfs" = "btrfs"; then
     if ! helper_format "$tgtroot" btrfs "$rootlabel"; then
       yad_message "Error" "Failed to format the root filesystem $tgtroot as btrfs. A log file can be found at $log."
-      stage_dec
+      stage_dec; stage_dec
       return
     fi
   else
     if ! helper_format "$tgtroot" ext4 "$rootlabel"; then
       yad_message "Error" "Failed to format the root filesystem $tgtroot as ext4. A log file can be found at $log."
-      stage_dec
+      stage_dec; stage_dec
       return
     fi
   fi
+  echo "75" >&"${formatprogress[1]}"
   if test $efimode -eq 1 && test $tgtefiformat -eq 1; then
     if ! helper_format "$tgtefi" vfat "EFI SYSTEM"; then
       yad_message "Error" "Failed to format the EFI System Partition $tgtefi as vfat. A log file can be found at $log."
-      stage_dec
+      stage_dec; stage_dec
       return
     fi
   fi
+  echo "100" >&"${formatprogress[1]}"
   # Move on to the next stage.
   stage_inc
 }
@@ -1108,13 +1169,17 @@ stage_systemconfig() {
   # This stage is for configuring the system after the installation.
   # Set up a progress bar using coproc, which we will update ourselves.
   coproc systemconfigprogress { yad --progress --title="Installation ⎯ $inv" --text="Configuring the system, please be patient." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100; }
-  # Generate the fstab file.
+  # Generate the fstab file (and crypttab file, if needed).
   write_log "Generating /etc/fstab for the target system."
   # Do all echos in a block and only write at the end, as required by SC2129.
   {
     echo "# This /etc/fstab was automatically generated by osinstallgui."
     echo "# Do not modify unless you know what you are doing."
     echo "# Any mistakes in this file could prevent the system from booting."
+    if test $tgtluks -eq 1; then
+      echo "# This installation was also configured for LUKS encryption."
+      echo "# The raw root device is set up in /etc/crypttab."
+    fi
     # Root filesystem fstab entry.
     echo "UUID=$(blkid -o value -s UUID "$tgtroot") / $(blkid -o value -s TYPE "$tgtroot") defaults 1 1"
     # EFI system partition fstab entry.
@@ -1126,6 +1191,15 @@ stage_systemconfig() {
       echo "/swapfile none swap sw 0 0"
     fi
   } > "$tgtpath"/etc/fstab
+  if test $tgtluks -eq 1; then
+    {
+      echo "# This /etc/crypttab was automatically generated by osinstallgui."
+      echo "# This is because the installation was configured to use LUKS."
+      echo "# Do not modify it, as it could prevent the system from booting."
+      # Cryptroot entry.
+      echo "cryptroot UUID=$(blkid -o value -s UUID "$tgtluksraw") none luks"
+    } > "$tgtpath"/etc/crypttab
+  fi
   write_log "Finished generation of /etc/fstab for the target system."
   echo "14" >&"${systemconfigprogress[1]}"
   # Prepare the locale for generation by uncommenting the line in the file.
@@ -1328,9 +1402,12 @@ stage_finish() {
     swapoff "$tgtpath"/swapfile &>>"$log"
     write_log "Finished deactivating the swapfile (hopefully)."
   fi
-  # Unmount all filesystems.
+  # Unmount all filesystems and close the LUKS mapper if needed.
   write_log "Unmounting all filesystems..."
   helper_umount "$tgtpath"
+  if test $tgtluks -eq 1; then
+    cryptsetup close cryptroot &>>"$log"
+  fi
   write_log "Finished unmounting all filesystems (hopefully)."
   # Show finishing message.
   if yad_prompt "Installation" "The installation of $osname has finished. Select 'YES' to shut down your system now, so you can restart into the new installation. Select 'NO' if, instead, you'd like to continue testing the live environment. In any case, remember to remove the installation media, to ensure you boot into the new installation as opposed to the live environment."; then
@@ -1390,6 +1467,7 @@ fi
 
 # Set up defaults for configuration values which are not mandatory.
 test ! -z "$OSINSTALLGUI_ALLOW_BTRFS" || OSINSTALLGUI_ALLOW_BTRFS=1
+test ! -z "$OSINSTALLGUI_ALLOW_LUKS" || OSINSTALLGUI_ALLOW_LUKS=1
 test ! -z "$OSINSTALLGUI_KEYMAPS_SYSTEMD" || OSINSTALLGUI_KEYMAPS_SYSTEMD=1
 test ! -z "$OSINSTALLGUI_KEYMAPS_LOCATION" || OSINSTALLGUI_KEYMAPS_LOCATION="/usr/share/keymaps"
 test ! -z "$OSINSTALLGUI_ROOTPW" || OSINSTALLGUI_ROOTPW=1
@@ -1417,7 +1495,7 @@ check_dep mkfs.fat dosfstools
 check_dep unsquashfs squashfs-tools
 
 # Disk and partition variables need to be accessed by the whole program.
-export tgtdisk="" tgtroot="" tgtfs="" tgtefi="" tgtefiformat=0 tgtswap=""
+export tgtdisk="" tgtroot="" tgtfs="" tgtefi="" tgtefiformat=0 tgtswap="" tgtluks=0 tgtlukspw="" tgtluksraw=""
 
 # Other global setup variables which need to be accessed by the whole program.
 export tgtlocale="" tgtkeymap="" tgtx11key="" tgttimezone="" tgtrootpw="" tgtusername="" tgtfullname="" tgtuserpw="" tgthostname=""
@@ -1464,14 +1542,15 @@ while test $stage -ge 0; do
     7) stage_userpw ;;
     8) stage_hostname ;;
     9) stage_diskpar ;;
-    10) stage_format ;;
-    11) stage_mount ;;
-    12) stage_swapsetup ;;
-    13) stage_installation ;;
-    14) stage_postinstall ;;
-    15) stage_systemconfig ;;
-    16) stage_initramfs ;;
-    17) stage_bootloader ;;
-    18) stage_finish ;;
+    10) stage_luks ;;
+    11) stage_format ;;
+    12) stage_mount ;;
+    13) stage_swapsetup ;;
+    14) stage_installation ;;
+    15) stage_postinstall ;;
+    16) stage_systemconfig ;;
+    17) stage_initramfs ;;
+    18) stage_bootloader ;;
+    19) stage_finish ;;
   esac
 done

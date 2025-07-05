@@ -81,11 +81,11 @@ required:
   each. The `yq` program is needed because `xkbcli list` provides its output in
   the **YAML** format; only `yq` is able to convert this into a format which is
   convenient for us to interpret and process the data from. If you're in any
-  sort of graphical environment, you should have **libxkbcommon** installed. If
-  you don't, all we can ask is WHY?! As for **yq**, it has two versions - the
-  Go version and the Python version. Either should suffice, but the Go one is
-  what we generally recommend, as it has fewer dependencies, and is even
-  available to download and use directly as a standalone binary from its
+  sort of graphical environment, you should already have the **libxkbcommon**
+  package installed. As for **yq**, it has two versions - the Go version and
+  the Python version. Either should suffice, but the Go one is what we
+  generally recommend, as it has fewer dependencies, and is even available to
+  download and use directly as a standalone binary from its
   [GitHub releases page](https://github.com/mikefarah/yq/releases).
 
 ## Why do I need to set the keyboard layout twice?
@@ -115,6 +115,54 @@ separate keymap which you can select, but under the hood, the layout and
 variant options are set separately. Additionally, some layout names differ
 between console and X11 maps. For example, **English (United Kingdom)** is `uk`
 in the console keymap system, while it is `gb` in the X11 keymap system.
+
+## Why am I asked about creating a fully portable installation?
+The fully portable mode offered by **osinstallgui** is designed to faciliate
+the installation onto a removable drive, such as a USB flash drive, or portable
+HDD/SSD, instead of an internal drive on the system. Installing onto a
+removable drive not only has the advantage that your internal disks will be
+entirely untouched and unaltered, but it also gives you the ability to use the
+new installation - along with all the data and programs on the installation -
+on any other computer system. It's like a Swiss Army Knife in your pocket! Now
+you might argue that this can be done with a regular Live ISO image written to
+a flash drive - and this is true - but live environments do not have any form
+of persistence. Once you finish using the live environment, all data on it is
+gone, and the entire environment is reset to how it would be on its first
+startup. By contrast, the fully portable OS installation on a removable drive,
+preserves all your applications, files, and settings, so you can start on one
+computer - switch to another in an entirely different place - and pick up right
+where you left off! Additionally, the fully portable mode will install a hybrid
+version of the **GRUB** bootloader - that is, one which will allow the drive to
+boot on systems using either Legacy BIOS or UEFI - something that the normal
+installation mode does not support - but maximises support across a wide range
+of both old and new computer systems. It achieves this by partitioning the disk
+in a certain way, such that both Legacy BIOS and UEFI systems can read from it
+and boot from it.
+
+Now the purpose of this option has been explained, the answer as to whether you
+want to use it or not should be made obvious. You **MUST NOT** use it if you
+are installing on an internal hard drive or SSD. You also probably don't want
+to use it if the drive is "removable", but is still intended to be connected to
+the same single system, and will not be moved to other systems. Additionally,
+it should be noted that the fully portable installation always erases all data
+on the entire drive - there is no option for "manual partitioning". Therefore,
+if you want to use manual partitioning instead - you **CANNOT** use the fully
+portable option. However, if you are OK with wiping the entire removable drive,
+and want the benefits that come with fully portable mode, then it's ideal to
+use. Note, however, that due to the nature of portable drives, and their easy
+ability to get lost/stolen, you almost certainly want to use **encryption**.
+So you may wish to read the **What is LUKS encryption and do I need it?**
+section below.
+
+This "fully portable" installation option replaces the older prompt given to
+the user, in **osinstallgui** versions prior to `0.9.0`, as to whether they
+wanted to install the UEFI bootloader in "internal" mode or "removable" mode.
+The information about this has been kept in this document, and can be seen in
+the **Why am I asked about installing GRUB in Internal or Removable mode?**
+section below, as it is still somewhat relevant. Just like that older option,
+the fully portable mode in newer versions of **osinstallgui** will install the
+UEFI bootloader in removable mode, and will not touch the UEFI variables of the
+system used to create the installation.
 
 ## What is an EFI system partition and why do I need one?
 Modern computers generally boot in UEFI mode instead of the older Legacy BIOS
@@ -235,6 +283,12 @@ installation from a separate live environment.
   configuration file (either set to `1`, or omitted, which defaults to `1`).
 
 ## Why am I asked about installing GRUB in Internal or Removable mode?
+**NOTE:** This information is only relevant to an older version of
+**osinstallgui**. Versions `0.9.0` and newer have replaced with option with a
+new "fully portable" mode option, which is described in a section above. The
+information is left here for historical purposes, and because it is interesting
+to read and understand.
+
 The GRUB UEFI bootloader can be installed in either "Internal" or "Removable"
 mode. At the low-level, this is done by omitting or including the `--removable`
 argument when running the `grub-install` command. The goal of this option is to

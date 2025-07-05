@@ -640,7 +640,6 @@ stage_hostname() {
   export tgthostname="$hostname"
   # Move on to the next stage.
   stage_inc
-
 }
 stage_diskpar() {
   # New method which is designed to merge disk setup and partition setup.
@@ -711,10 +710,17 @@ stage_diskpar() {
           return
         fi
       fi
+      # Ask if fully removable mode should be used.
+      if yad_prompt "Erase Disk" "Would you like to set up this disk for a fully portable installation? Answer 'NO' unless you are installing $osname to a USB flash drive or portable HDD/SSD. See go.dmassey.net/ogf for more information."; then
+        local fullyportable=1
+      else
+        local fullyportable=0
+      fi
       # Ask if btrfs should be used, if supported and enabled in configuration.
-      local btrfsuse=0
       if test "$OSINSTALLGUI_ALLOW_BTRFS" = "1" && which mkfs.btrfs &>/dev/null && yad_prompt "Erase Disk" "Would you like to use btrfs for the root partition? This is recommended, unless you have a specfic reason to prefer the traditional ext4."; then
         local btrfsuse=1
+      else
+        local btrfsuse=0
       fi
       # Ask if the user wants swap space.
       if yad_prompt "Erase Disk" "Swap is a reserved area on the disk which can act as an emergency RAM backup in case the system RAM becomes full. Would you like to make use of a swap file?"; then
@@ -739,12 +745,15 @@ stage_diskpar() {
       sync; sgdisk -Z "$diskselection" &>>"$log"
       sync; partprobe &>>"$log"
       write_log "Finished erasing the disk $diskselection."
-      # Decide which partitions to make depending on boot mode and swap choice.
-      if test $efimode -eq 1; then
-        # UEFI.
+      # Decide which partitions to make depending on boot mode.
+      if test $fullyportable -eq 1; then
+        # For hybrid booting, we need GPT with both BIOS boot + EFI partitions.
+        local operations='g\nn\n\n\n+1M\nt\n4\nn\n\n\n+500M\nt\n2\n1\nn\n\n\n\nw\n'
+      elif test $efimode -eq 1; then
+        # Standard UEFI.
         local operations='g\nn\n\n\n+500M\nt\n1\nn\n\n\n\nw\n'
       else
-        # Legacy BIOS.
+        # Standard Legacy BIOS.
         local operations='o\nn\n\n\n\n\nw\n'
       fi
       # Partition the disk.
@@ -760,7 +769,11 @@ stage_diskpar() {
       local createdparts=()
       readarray -t createdparts < <(lsblk -lnp "$diskselection" | grep part | cut -d' ' -f1)
       # Ensure the disk was partitioned correctly by counting the partitions.
-      if test $efimode -eq 1 && test -z "${createdparts[1]}"; then
+      if test $fullyportable -eq 1 && test -z "${createdparts[2]}"; then
+        # Fully portable configuration needs 3 partitions.
+        yad_message "Error" "Failed to partition the disk $diskselection (the operation didn't create all needed partitions). A log file can be found at $log."
+        return
+      elif test $efimode -eq 1 && test -z "${createdparts[1]}"; then
         # EFI configuration needs 2 partitions.
         yad_message "Error" "Failed to partition the disk $diskselection (the operation didn't create all needed partitions). A log file can be found at $log."
         return
@@ -771,8 +784,16 @@ stage_diskpar() {
       fi
       # Set up the global variables, now we are done with this process.
       export tgtdisk="$diskselection"
+      # Root partition is always the last partition on the disk (-1 index).
       export tgtroot="${createdparts[-1]}"
-      test $efimode -ne 1 || export tgtefi="${createdparts[0]}"
+      # EFI is partition 1 on normal and partition 2 on fullyportable.
+      if test $efimode -eq 1; then
+        if test $fullyportable -eq 1; then
+          export tgtefi="${createdparts[1]}"
+        else
+          export tgtefi="${createdparts[0]}"
+        fi
+      fi
       # Save the filesystem used for the root partition.
       if test $btrfsuse -eq 1; then
         export tgtfs="btrfs"
@@ -781,6 +802,12 @@ stage_diskpar() {
       fi
       # We by default will need to format the EFI partition.
       export tgtefiformat=1
+      # We need to inform the future stages that the installation is portable.
+      if test $fullyportable -eq 1; then
+        export tgtfullport=1
+      else
+        export tgtfullport=0
+      fi
       # Save the swap size.
       export tgtswap="$swapsize"
       # Move on to the partition formatting stage.
@@ -912,6 +939,8 @@ stage_diskpar() {
       export tgtswap="$swapsize"
       # Save whether or not we are going to format the EFI system partition.
       export tgtefiformat=$efiformat
+      # The manual installation method does not support fully portable mode.
+      export tgtfullport=0
       # Proceed to the next stage.
       stage_inc
       ;;
@@ -1007,6 +1036,7 @@ stage_format() {
   # Determine the label for the root filesystem, based on OS name.
   local rootlabel="$(echo "$osname" | cut -d' ' -f1)"
   # Try to format the partitions. Step back a stage if any format fails.
+  # Note that BIOS boot (fullyportable) doesn't need to be formatted at all.
   if test "$tgtfs" = "btrfs"; then
     if ! helper_format "$tgtroot" btrfs "$rootlabel"; then
       yad_message "Error" "Failed to format the root filesystem $tgtroot as btrfs. A log file can be found at $log."
@@ -1049,7 +1079,7 @@ stage_mount() {
     return
   fi
   # Mount the EFI partition if needed.
-  if test $efimode -eq 1 && ! helper_mount "$tgtefi" "$tgtpath/boot/efi"; then
+  if { test $efimode -eq 1 || test $tgtfullport -eq 1; } && ! helper_mount "$tgtefi" "$tgtpath/boot/efi"; then
     yad_message "Error" "Unable to mount the EFI system partition $tgtroot. The installation cannot continue. A log file can be found at $log."
     stage_dec
     return
@@ -1343,54 +1373,68 @@ stage_initramfs() {
 stage_bootloader() {
   # Install the bootloader on the target system.
   # In both cases, the '--target' option is now explicitly specified.
-  # Otherwise some buggy BIOSes will default to a target unsupported by GRUB.
-  local grub_args
-  if test $efimode -eq 1; then
-    # UEFI mode.
-    grub_args+="--target=x86_64-efi"
-    # Ask the user if they want to install in internal or removable mode.
-    # We have now switched to a menu to improve user-friendliness.
-    local choice="$(yad_menu "Bootloader" "Which type of disk are you installing $osname to?" "Internal" "Internal SSD or hard drive (default)." "Removable" "Portable HDD/SSD or USB flash drive." "Help" "More detail about this question.")"
-    choice="${choice%%|*}"
-    if test -z "$choice" || test "$choice" = "Help"; then
-      # Show the help message.
-      yad_message "Bootloader" "The GRUB UEFI bootloader can be installed in either 'Internal' or 'Removable' mode, to make it easier to boot depending on which type of disk you are installing $osname to.\n\nChoose 'Internal' for all internal disks or any disks that are intended to remain connected to the same system. This includes for dual-booting.\n\nChoose 'Removable' if you are installing $osname to a removable drive, such a portable HDD/SSD or a USB flash drive. This will ensure the drive can be booted on any system, and is not locked to the system it was installed from.\n\nVisit go.dmassey.net/ogf for more information, as well as the rationale behind the inclusion of this option in osinstallgui."
-      # Start this choice again.
-      return
-    elif test "$choice" = "Removable"; then
-      # Add the --removable flag to the arguments for grub-install.
-      grub_args+=" --removable"
-    fi
-  else
-    # Legacy BIOS mode - the disk has to be explicitly passed as an argument.
-    grub_args+="--target=i386-pc $tgtdisk"
-  fi
-  # Try to install the bootloader.
-  write_log "Trying to install bootloader using 'grub-install $grub_args'."
-  # Fake progress bar, but at least a way to inform the user somehow.
+  # Otherwise some buggy firmwares may default to a target unsupported by GRUB.
+  # Note that fully portable mode has to be installed both for BIOS and UEFI.
+  # We also now no longer ask about installation type, since it's done earlier.
+  # Fake progress bar, but at least it's a way to inform the user somehow.
   {
-    # GRUB installation step.
-    helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install $grub_args
-    echo "$?" > "$workdir"/.status_grub_a
+    # Legacy BIOS loader.
+    if test $tgtfullport -eq 1 || test $efimode -eq 0; then
+      write_log "Trying to install the GRUB bootloader for Legacy BIOS..."
+      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=i386-pc "$tgtdisk"
+      echo "$?" > "$workdir"/.sga1
+    fi
+    # UEFI loader (internal mode).
+    if test $efimode -eq 1 && test $tgtfullport -eq 0; then
+      write_log "Trying to install the GRUB bootloader for UEFI (internal)..."
+      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=x86_64-efi
+      echo "$?" > "$workdir"/.sga2
+    fi
+    # UEFI loader (removable mode - for fullyportable or internal fallback).
+    if test $tgtfullport -eq 1 || { test $efimode -eq 1 && test ! -e "$tgtpath"/boot/efi/EFI/BOOT/BOOTX64.EFI; }; then
+      write_log "Trying to install the GRUB bootloader for UEFI (removable)..."
+      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=x86_64-efi --removable
+      echo "$?" > "$workdir"/.sga3
+    fi
     # Tell yad that we are half done.
     echo "50"
-    # Re-run grub-install with the --removable flag if no fallback exists.
-    if test $efimode -eq 1 && test ! -f "$tgtpath"/boot/efi/EFI/BOOT/BOOTX64.EFI; then
-      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install $grub_args --removable
-      echo "$?" > "$workdir"/.status_grub_a1
+    # Before GRUB configuration, modify /etc/default/grub for fullyportable.
+    if test $tgtfullport -eq 1 && test -e "$tgtpath"/etc/default/grub; then
+      cp "$tgtpath"/etc/default/grub{,.ORIGINAL_BACKED_UP_BY_OSINSTALLGUI}
+      {
+        echo ""
+        echo "# The following appendages have been made by osinstallgui."
+        echo "# This is because a fully portable installation was chosen."
+        echo "# The original file has been backed up in the same directory."
+        echo "# Note that these lines take priority over anything above."
+        echo "GRUB_DEFAULT=0"
+        echo "GRUB_TIMEOUT=1"
+        echo "GRUB_TIMEOUT_STYLE=\"hidden\""
+        echo "GRUB_SAVEDEFAULT=\"false\""
+        echo "GRUB_DISABLE_OS_PROBER=\"true\""
+      } >> "$tgtpath"/etc/default/grub
     fi
     # GRUB configuration step.
+    write_log "Trying to configure the GRUB bootloader with grub-mkconfig..."
     helper_chroot_advanced "$tgtpath" /usr/bin/env grub-mkconfig -o /boot/grub/grub.cfg
-    echo "$?" > "$workdir"/.status_grub_b
+    echo "$?" > "$workdir"/.sgb
     # Now tell yad that we are done.
     echo "100"
   } | yad --progress --title="Installation ⎯ $inv" --text="Installing the GRUB bootloader, please be patient." --percentage=0 --auto-close --no-buttons --no-escape --width=600 --height=100
-  if test "$(cat "$workdir"/.status_grub_a 2>&1)" != "0" || test "$(cat "$workdir"/.status_grub_b 2>&1)" != "0" || { test -f "$workdir"/.status_grub_a1 && test "$(cat "$workdir"/.status_grub_a1 2>&1)" != "0"; }; then
+  # Check if anything went wrong during the process.
+  local grubfailure=0
+  for s in a1 a2 a3 b; do
+    if test -f "$workdir/.sg$s" && test "$(cat "$workdir/.sg$s" 2>&1)" != "0"; then
+      grubfailure=1
+      break
+    fi
+  done
+  if test $grubfailure -ne 0; then
     # Something went wrong, complain about the problem.
-    write_log "Bootloader installation using 'grub-install $grub_args' failed."
-    yad_message "Error" "The GRUB bootloader installation failed. Manual intervention will likely be needed to correct this problem and make your system bootable. A log file can be found at $log."
+    write_log "Installation of the GRUB bootloader failed."
+    yad_message "Error" "A failure was reported during the installation of the GRUB bootloader. Manual intervention may be needed to correct this problem and make your system bootable. A log file can be found at $log."
   else
-    write_log "Bootloader installation using 'grub-install $grub_args' succeeded."
+    write_log "Installation of the GRUB bootloader was successful."
   fi
   # Go to the final stage.
   stage_inc
@@ -1495,7 +1539,7 @@ check_dep mkfs.fat dosfstools
 check_dep unsquashfs squashfs-tools
 
 # Disk and partition variables need to be accessed by the whole program.
-export tgtdisk="" tgtroot="" tgtfs="" tgtefi="" tgtefiformat=0 tgtswap="" tgtluks=0 tgtlukspw="" tgtluksraw=""
+export tgtdisk="" tgtroot="" tgtfs="" tgtefi="" tgtefiformat=0 tgtfullport=0 tgtswap="" tgtluks=0 tgtlukspw="" tgtluksraw=""
 
 # Other global setup variables which need to be accessed by the whole program.
 export tgtlocale="" tgtkeymap="" tgtx11key="" tgttimezone="" tgtrootpw="" tgtusername="" tgtfullname="" tgtuserpw="" tgthostname=""

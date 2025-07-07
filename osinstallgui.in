@@ -1381,19 +1381,19 @@ stage_bootloader() {
     # Legacy BIOS loader.
     if test $tgtfullport -eq 1 || test $efimode -eq 0; then
       write_log "Trying to install the GRUB bootloader for Legacy BIOS..."
-      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=i386-pc "$tgtdisk"
+      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=i386-pc "$tgtdisk" "$OSINSTALLGUI_GRUB_EXTRA_ARGS_LEGACY"
       echo "$?" > "$workdir"/.sga1
     fi
     # UEFI loader (internal mode).
     if test $efimode -eq 1 && test $tgtfullport -eq 0; then
       write_log "Trying to install the GRUB bootloader for UEFI (internal)..."
-      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=x86_64-efi
+      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=x86_64-efi "$OSINSTALLGUI_GRUB_EXTRA_ARGS_UEFIIN"
       echo "$?" > "$workdir"/.sga2
     fi
     # UEFI loader (removable mode - for fullyportable or internal fallback).
     if test $tgtfullport -eq 1 || { test $efimode -eq 1 && test ! -e "$tgtpath"/boot/efi/EFI/BOOT/BOOTX64.EFI; }; then
       write_log "Trying to install the GRUB bootloader for UEFI (removable)..."
-      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=x86_64-efi --removable
+      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=x86_64-efi --removable "$OSINSTALLGUI_GRUB_EXTRA_ARGS_UEFIRM"
       echo "$?" > "$workdir"/.sga3
     fi
     # Tell yad that we are half done.

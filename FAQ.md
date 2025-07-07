@@ -412,26 +412,6 @@ And remember that `<USERNAME-OF-LIVECD-USER>` is a placeholder which should be
 replaced with the actual username of the Live CD user, and also without the
 angled brackets.
 
-## Clickable links don't open in the browser.
-This is an issue we are aware of, and is again likely caused by the issue of
-running a graphical program as root under a normal user's desktop session.
-
-When run from a terminal, you may see a message from Firefox that states it
-will refuse to run in this aforementioned context. One possible fix might be
-changing the default browser (you can do this from yad's inbuilt settings -
-separate to the **osinstallgui** program - but again you would likely need to
-ensure it also applies to the root user, which it may not by default). If your
-system doesn't have another browser, the **WebKitGTK** package provides a
-minimal browser you might be able to use, called `MiniBrowser`, and available
-at the following location (may be slightly different depending on your distro's
-configuration):
-
-```
-/usr/libexec/webkit2gtk-4.1/MiniBrowser
-```
-
-In any case, contributions are welcome to try and fix this problem as a whole.
-
 ## Sometimes the program appears closed and nothing is happening
 If the program appears closed, chances are something is happening! You just
 need to be patient.

@@ -91,6 +91,7 @@ euro2: Euro symbol enhanced alternative 2
 fa: Persian (Farsi)
 fi: Finnish
 fr: French AZERTY
+fr-afnor: French AFNOR (NF Z71-300)
 fr-bepo: French BÉPO ergonomic
 fr-bepo-latin9: French BÉPO (Latin-9)
 fr_CH: Swiss French
@@ -98,6 +99,7 @@ fr_CH-latin1: Swiss French (Latin-1)
 fr-latin1: French (Latin-1)
 fr-latin9: French (Latin-9)
 fr-pc: French for PC
+ge: Georgian
 gr: Greek
 gr-pc: Greek for PC
 hu: Hungarian

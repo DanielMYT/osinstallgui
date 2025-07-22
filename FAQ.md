@@ -117,6 +117,14 @@ between console and X11 maps. For example, **English (United Kingdom)** is `uk`
 in the console keymap system, while it is `gb` in the X11 keymap system.
 
 ## Why am I asked about creating a fully portable installation?
+**NOTE:** As of **osinstallgui** version `0.9.4`, the fully portable
+installation will only be offered (and therefore you will only be prompted) if
+the selected disk for installation is detected as removable (i.e., connected
+through a USB port). This has been tested to work with USB enclosures too, but
+you can set the option `OSINSTALLGUI_ALWAYS_OFFER_FULLPORT=1` in the
+**osinstallgui** configuration file to override the default, if you want it to
+show regardless of the device type.
+
 The fully portable mode offered by **osinstallgui** is designed to faciliate
 the installation onto a removable drive, such as a USB flash drive, or portable
 HDD/SSD, instead of an internal drive on the system. Installing onto a

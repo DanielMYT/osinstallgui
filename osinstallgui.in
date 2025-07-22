@@ -710,8 +710,12 @@ stage_diskpar() {
           return
         fi
       fi
-      # Ask if fully removable mode should be used.
-      if yad_prompt "Erase Disk" "Would you like to set up this disk for a fully portable installation? Answer 'NO' unless you are installing $osname to a USB flash drive or portable HDD/SSD. See go.dmassey.net/ogf for more information."; then
+      # Ask about fully portable mode if necessary.
+      # Either the disk is removable or always offer option is enabled.
+      # But we need a different prompt for each, so as to not confuse the user.
+      if test "$OSINSTALLGUI_ALWAYS_OFFER_FULLPORT" = "1" && yad_prompt "Erase Disk" "Would you like to set up this disk for a fully portable installation, so it can be easily moved between and booted on different computers? Answer 'NO' unless you are installing onto a USB flash drive or portable HDD/SSD. See go.dmassey.net/ogf for more information."; then
+        local fullyportable=1
+      elif udevadm info -q property -n "$diskselection" | grep -qE '^ID_USB_DRIVER|^ID_BUS=usb' && yad_prompt "Erase Disk" "The installer detected the selected disk to be a removable drive (e.g., USB flash drive or portable HDD/SSD). Would you like to set up this disk for a fully portable installation, so it can be easily moved between and booted on different computers? See go.dmassey.net/ogf for more information."; then
         local fullyportable=1
       else
         local fullyportable=0
@@ -1512,6 +1516,7 @@ fi
 # Set up defaults for configuration values which are not mandatory.
 test ! -z "$OSINSTALLGUI_ALLOW_BTRFS" || OSINSTALLGUI_ALLOW_BTRFS=1
 test ! -z "$OSINSTALLGUI_ALLOW_LUKS" || OSINSTALLGUI_ALLOW_LUKS=1
+test ! -z "$OSINSTALLGUI_ALWAYS_OFFER_FULLPORT" || OSINSTALLGUI_ALWAYS_OFFER_FULLPORT=0
 test ! -z "$OSINSTALLGUI_KEYMAPS_SYSTEMD" || OSINSTALLGUI_KEYMAPS_SYSTEMD=1
 test ! -z "$OSINSTALLGUI_KEYMAPS_LOCATION" || OSINSTALLGUI_KEYMAPS_LOCATION="/usr/share/keymaps"
 test ! -z "$OSINSTALLGUI_ROOTPW" || OSINSTALLGUI_ROOTPW=1

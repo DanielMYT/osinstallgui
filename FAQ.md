@@ -172,6 +172,51 @@ the fully portable mode in newer versions of **osinstallgui** will install the
 UEFI bootloader in removable mode, and will not touch the UEFI variables of the
 system used to create the installation.
 
+## Should I have boot as a separate partition to root?
+One question you are asked during the disk setup stage of the installation is
+whether or not you want to have `/` and `/boot` on separate partitions. This
+decision primary comes down to whether or not you intend to use disk encryption
+using LUKS (which you will decide upon slightly further on in the installation
+process). For more information on LUKS encryption, see the section below titled
+**What is LUKS encryption and do I need it?**
+
+The `/boot` directory stores the bootloader files, as well as the kernel and
+initramfs. These files are essential for booting the system. The issue is that,
+if you choose to use LUKS disk encryption, and `/boot` is **NOT** on a separate
+partition to the main root partition, then the contents of `/boot` will be
+encrypted on startup, like the rest of your OS files. Because the GRUB
+bootloader needs to access these files to boot the operating system, GRUB will
+have to prompt you to type the encryption passphrase to decrypt them. Once they
+have been decrypted, the boot process can continue as normal, but then you will
+be prompted to type the password _again_, so the encrypted root filesystem can
+be mounted for normal bootup and operation.
+
+Not only is it inconvenient to have to type the same passphrase twice, the
+process of decrypting via GRUB is not very intuitive. GRUB's main graphical
+theme is stored on the encrypted filesystem, so the prompt has to come up
+_before_ that can be loaded. It is therefore a text-based prompt. It is also
+known that the process of decrypting the encrypted filesystem with GRUB adds
+several extra seconds to the system bootup time, which may also not be what you
+want.
+
+Therefore, by separating the root and boot partitions, and keeping `/boot`
+unencrypted (as its contents aren't sensitive anyway), you can prevent the need
+for unlocking at the GRUB stage, and therefore you will only need to type the
+passphrase once during the entire boot process (and the boot process will also
+be quicker).
+
+However, having an additional partition on the physical disk can make it
+slightly more complicated to manage the disk if you ever need to do some manual
+resizing/moving/addition/deletion of partitions. So if you aren't using LUKS
+disk encryption, there is probably no reason to split `/` and `/boot`, and you
+can just answer **NO** to keep everything in one partition for simplicity.
+
+Furthermore, you will be unable to use any custom theme or background image
+unless it is stored on the `/boot` partition (which is non-standard), as doing
+so would require the root partition to still be unlocked at the GRUB stage,
+thus defeating the whole purpose of separating `/` and `/boot` in the first
+place.
+
 ## What is an EFI system partition and why do I need one?
 Modern computers generally boot in UEFI mode instead of the older Legacy BIOS
 mode, primarily due to it being faster and easier to maintain. The main

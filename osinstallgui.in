@@ -661,7 +661,7 @@ stage_diskpar() {
   readarray -t disks < <(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name fd\* ! -name loop\* ! -name sr\* -exec basename {} \; | sort | grep -vx "$imdisk")
   # Throw an error if no disks were found.
   if test ${#disks[@]} -eq 0; then
-    yad_message "Error" "No physical disks were found on your system. If your internal drive is failing to be detected, please visit go.dmassey.net/ogf for troubleshooting tips."
+    yad_message "Error" "No physical disks were found on your system. If your internal drive is failing to be detected, please visit go.dmassey.net/of1 for troubleshooting tips."
     # Go back to the main menu, since a reboot will probably be needed.
     export stage=0
     return
@@ -713,9 +713,9 @@ stage_diskpar() {
       # Ask about fully portable mode if necessary.
       # Either the disk is removable or always offer option is enabled.
       # But we need a different prompt for each, so as to not confuse the user.
-      if test "$OSINSTALLGUI_ALWAYS_OFFER_FULLPORT" = "1" && yad_prompt "Erase Disk" "Would you like to set up this disk for a fully portable installation, so it can be easily moved between and booted on different computers? Answer 'NO' unless you are installing onto a USB flash drive or portable HDD/SSD. See go.dmassey.net/ogf for more information."; then
+      if test "$OSINSTALLGUI_ALWAYS_OFFER_FULLPORT" = "1" && yad_prompt "Erase Disk" "Would you like to set up this disk for a fully portable installation, so it can be easily moved between and booted on different computers? Answer 'NO' unless you are installing onto a USB flash drive or portable HDD/SSD. See go.dmassey.net/of2 for more information."; then
         local fullyportable=1
-      elif udevadm info -q property -n "$diskselection" | grep -qE '^ID_USB_DRIVER|^ID_BUS=usb' && yad_prompt "Erase Disk" "The installer detected the selected disk to be a removable drive (e.g., USB flash drive or portable HDD/SSD). Would you like to set up this disk for a fully portable installation, so it can be easily moved between and booted on different computers? See go.dmassey.net/ogf for more information."; then
+      elif udevadm info -q property -n "$diskselection" | grep -qE '^ID_USB_DRIVER|^ID_BUS=usb' && yad_prompt "Erase Disk" "The installer detected the selected disk to be a removable drive (e.g., USB flash drive or portable HDD/SSD). Would you like to set up this disk for a fully portable installation, so it can be easily moved between and booted on different computers? See go.dmassey.net/of2 for more information."; then
         local fullyportable=1
       else
         local fullyportable=0
@@ -725,6 +725,12 @@ stage_diskpar() {
         local btrfsuse=1
       else
         local btrfsuse=0
+      fi
+      # Ask if the user wants to split root and boot.
+      if yad_prompt "Erase Disk" "Would you like to have '/' and '/boot' on separate partitions? It is recommended (but not required) that you answer 'YES' if you intend to set up disk encryption with LUKS, and 'NO' otherwise. Visit go.dmassey.net/of3 for more clarification about this question."; then
+        local splitbootuse=1
+      else
+        local splitbootuse=0
       fi
       # Ask if the user wants swap space.
       if yad_prompt "Erase Disk" "Swap is a reserved area on the disk which can act as an emergency RAM backup in case the system RAM becomes full. Would you like to make use of a swap file?"; then
@@ -752,13 +758,28 @@ stage_diskpar() {
       # Decide which partitions to make depending on boot mode.
       if test $fullyportable -eq 1; then
         # For hybrid booting, we need GPT with both BIOS boot + EFI partitions.
-        local operations='g\nn\n\n\n+1M\nt\n4\nn\n\n\n+500M\nt\n2\n1\nn\n\n\n\nw\n'
+        if test $splitbootuse -eq 1; then
+          # ... And an additional boot partition due to split boot.
+          local operations='g\nn\n\n\n+1M\nt\n4\nn\n\n\n+500M\nt\n2\n1\nn\n\n\n+1G\nn\n\n\n\nw\n'
+        else
+          local operations='g\nn\n\n\n+1M\nt\n4\nn\n\n\n+500M\nt\n2\n1\nn\n\n\n\nw\n'
+        fi
       elif test $efimode -eq 1; then
-        # Standard UEFI.
-        local operations='g\nn\n\n\n+500M\nt\n1\nn\n\n\n\nw\n'
+        if test $splitbootuse -eq 1; then
+          # Standard UEFI with split boot.
+          local operations='g\nn\n\n\n+500M\nt\n1\nn\n\n\n+1G\nn\n\n\n\nw\n'
+        else
+          # Standard UEFI.
+          local operations='g\nn\n\n\n+500M\nt\n1\nn\n\n\n\nw\n'
+        fi
       else
-        # Standard Legacy BIOS.
-        local operations='o\nn\n\n\n\n\nw\n'
+        if test $splitbootuse -eq 1; then
+          # Standard Legacy BIOS with split boot.
+          local operations='o\nn\n\n\n\n+1G\nn\n\n\n\n\nw\n'
+        else
+          # Standard Legacy BIOS.
+          local operations='o\nn\n\n\n\n\nw\n'
+        fi
       fi
       # Partition the disk.
       write_log "Partitioning the disk $diskselection using fdisk."
@@ -773,17 +794,18 @@ stage_diskpar() {
       local createdparts=()
       readarray -t createdparts < <(lsblk -lnp "$diskselection" | grep part | cut -d' ' -f1)
       # Ensure the disk was partitioned correctly by counting the partitions.
-      if test $fullyportable -eq 1 && test -z "${createdparts[2]}"; then
-        # Fully portable configuration needs 3 partitions.
+      # May not be needed, but done to catch program bugs and rare edge cases.
+      local countpartfail=0
+      if test $splitbootuse -eq 1; then
+        if test $fullyportable -eq 1 && test -z "${createdparts[3]}" || test $efimode -eq 1 && test -z "${createdparts[2]}" || test -z "${createdparts[1]}"; then
+          countpartfail=1
+        fi
+      elif test $fullyportable -eq 1 && test -z "${createdparts[2]}" || test $efimode -eq 1 && test -z "${createdparts[1]}" || test -z "${createdparts[0]}"; then
+        countpartfail=1
+      fi
+      # Display an error message and return if the count check failed.
+      if test $countpartfail -eq 1; then
         yad_message "Error" "Failed to partition the disk $diskselection (the operation didn't create all needed partitions). A log file can be found at $log."
-        return
-      elif test $efimode -eq 1 && test -z "${createdparts[1]}"; then
-        # EFI configuration needs 2 partitions.
-        yad_message "Error" "Failed to partition the disk $diskselection (the operation didn't create all needed partitions). A log file can be found at $log."
-        return
-      elif test -z "${createdparts[0]}"; then
-        # No partitions at all - this would be an error in all cases.
-        yad_message "Error" "Failed to partition the disk $diskselection (the operation didn't create any partitions). A log file can be found at $log."
         return
       fi
       # Set up the global variables, now we are done with this process.
@@ -797,6 +819,19 @@ stage_diskpar() {
         else
           export tgtefi="${createdparts[0]}"
         fi
+      fi
+      # Boot, if needed, is partition 1 on BIOS, 2 on UEFI, 3 on fullyportable.
+      if test $splitbootuse -eq 1; then
+        if test $fullyportable -eq 1; then
+          export tgtboot="${createdparts[2]}"
+        elif test $efimode -eq 1; then
+          export tgtboot="${createdparts[1]}"
+        else
+          export tgtboot="${createdparts[0]}"
+        fi
+      else
+        # Set tgtboot empty in case it spilled over from a cancelled selection.
+        export tgtboot=""
       fi
       # Save the filesystem used for the root partition.
       if test $btrfsuse -eq 1; then
@@ -818,6 +853,8 @@ stage_diskpar() {
       stage_inc
       ;;
     "2")
+      # TODO: Rework to not restart on menu backouts or invalid selections.
+      # TODO: Also add separated root/boot support, not just for erase disk.
       # Get a list of every partition on every disk.
       local partentries=()
       for disk in "${disks[@]}"; do
@@ -878,9 +915,9 @@ stage_diskpar() {
       # Prompt for selection of an EFI partition if we are in UEFI mode.
       if test $efimode -eq 1; then
         # Show an information message.
-        yad_message "Partition Setup" "Your system is booted in UEFI mode. A separate FAT32 (vfat) partition of around 100MiB-500MiB must therefore exist, to store the bootloader files. If it is used by another OS, it can be shared with MassOS without needing to be re-formatted. Visit go.dmassey.net/ogf for more information."
+        yad_message "Partition Setup" "Your system is booted in UEFI mode. A separate FAT32 (vfat) partition of around 100MiB-500MiB must therefore exist, to store the bootloader files. If it is used by another OS, it can be shared with MassOS without needing to be re-formatted. Visit go.dmassey.net/of4 for more information."
         # Ask which EFI partition to use.
-        local choiceefipar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the EFI system partition. It must differ from the selection for the root partition." "${partentries[@]}")"
+        local choiceefipar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the EFI system partition. It must DIFFER from the selection for the root partition." "${partentries[@]}")"
         # Go back if the user backed out.
         test ! -z "$choiceefipar" || return
         # Filter yad return value to get the selection.
@@ -973,7 +1010,7 @@ stage_diskpar() {
 }
 stage_luks() {
   # Set up the installation for LUKS encryption.
-  if test "$OSINSTALLGUI_ALLOW_LUKS" = "1" && yad_prompt "Encryption Setup" "Would you like to enable disk encryption using LUKS? This will require creating a passphrase which will then need to be typed on every boot. See go.dmassey.net/ogf for more info. If unsure, answer 'NO'."; then
+  if test "$OSINSTALLGUI_ALLOW_LUKS" = "1" && yad_prompt "Encryption Setup" "Would you like to enable disk encryption using LUKS? This will require creating a passphrase which will then need to be typed on every boot. See go.dmassey.net/of5 for more info. If unsure, answer 'NO'."; then
     # Ask for the LUKS passphrase.
     local luksphrase1
     luksphrase1="$(yad_password "Encryption Setup" "Please enter the new encryption passphrase you wish to use. Be aware that if you ever forget this, your data will be as good as gone.")"
@@ -1047,20 +1084,30 @@ stage_format() {
       stage_dec; stage_dec
       return
     fi
+    # Format boot partition as btrfs if we need to.
+    if test ! -z "$tgtboot" && ! helper_format "$tgtboot" btrfs "$rootlabel BOOT"; then
+      yad_message "Error" "Failed to format the boot partition $tgtboot as btrfs. A log file can be found at $log."
+      stage_dec; stage_dec
+      return
+    fi
   else
     if ! helper_format "$tgtroot" ext4 "$rootlabel"; then
       yad_message "Error" "Failed to format the root filesystem $tgtroot as ext4. A log file can be found at $log."
       stage_dec; stage_dec
       return
     fi
-  fi
-  echo "75" >&"${formatprogress[1]}"
-  if test $efimode -eq 1 && test $tgtefiformat -eq 1; then
-    if ! helper_format "$tgtefi" vfat "EFI SYSTEM"; then
-      yad_message "Error" "Failed to format the EFI System Partition $tgtefi as vfat. A log file can be found at $log."
+    # Format root partition as ext4 if we need to.
+    if test ! -z "$tgtboot" && ! helper_format "$tgtboot" ext4 "$rootlabel BOOT"; then
+      yad_message "Error" "Failed to format the boot partition $tgtboot as ext4. A log file can be found at $log."
       stage_dec; stage_dec
       return
     fi
+  fi
+  echo "75" >&"${formatprogress[1]}"
+  if test $efimode -eq 1 && test $tgtefiformat -eq 1 && ! helper_format "$tgtefi" vfat "EFI SYSTEM"; then
+    yad_message "Error" "Failed to format the EFI System Partition $tgtefi as vfat. A log file can be found at $log."
+    stage_dec; stage_dec
+    return
   fi
   echo "100" >&"${formatprogress[1]}"
   # Move on to the next stage.
@@ -1081,6 +1128,10 @@ stage_mount() {
     # TODO: Give the user a choice to either retry or go back to diskpar stage.
     stage_dec
     return
+  fi
+  # Mount the boot partition if needed.
+  if test ! -z "$tgtboot" && ! helper_mount "$tgtboot" "$tgtpath/boot"; then
+    yad_message "Error" "Unable to mount the boot partition $tgtboot. The installation cannot continue. A log file can be found at $log."
   fi
   # Mount the EFI partition if needed.
   if { test $efimode -eq 1 || test $tgtfullport -eq 1; } && ! helper_mount "$tgtefi" "$tgtpath/boot/efi"; then
@@ -1215,7 +1266,11 @@ stage_systemconfig() {
       echo "# The raw root device is set up in /etc/crypttab."
     fi
     # Root filesystem fstab entry.
-    echo "UUID=$(blkid -o value -s UUID "$tgtroot") / $(blkid -o value -s TYPE "$tgtroot") defaults 1 1"
+    echo "UUID=$(blkid -o value -s UUID "$tgtroot") / $tgtfs defaults 1 1"
+    # Boot partition fstab entry.
+    if test ! -z "$tgtboot"; then
+      echo "UUID=$(blkid -o value -s UUID "$tgtboot") /boot $tgtfs defaults 1 2"
+    fi
     # EFI system partition fstab entry.
     if test ! -z "$tgtefi"; then
       echo "UUID=$(blkid -o value -s UUID "$tgtefi") /boot/efi vfat umask=0077 0 2"
@@ -1544,7 +1599,7 @@ check_dep mkfs.fat dosfstools
 check_dep unsquashfs squashfs-tools
 
 # Disk and partition variables need to be accessed by the whole program.
-export tgtdisk="" tgtroot="" tgtfs="" tgtefi="" tgtefiformat=0 tgtfullport=0 tgtswap="" tgtluks=0 tgtlukspw="" tgtluksraw=""
+export tgtdisk="" tgtroot="" tgtfs="" tgtefi="" tgtefiformat=0 tgtboot="" tgtfullport=0 tgtswap="" tgtsplitboot=0 tgtluks=0 tgtlukspw="" tgtluksraw=""
 
 # Other global setup variables which need to be accessed by the whole program.
 export tgtlocale="" tgtkeymap="" tgtx11key="" tgttimezone="" tgtrootpw="" tgtusername="" tgtfullname="" tgtuserpw="" tgthostname=""

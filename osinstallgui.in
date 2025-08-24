@@ -66,8 +66,10 @@ check_dep() {
 yad_menu() {
   local title="$1 ⎯ $inv"
   local menu="$2"
-  shift 2
-  local response="$(yad --list --title="$title" --text="$menu" --column="Option" --column="Description" "$@" --width=600 --height=300)"
+  local col1="$3"
+  local col2="$4"
+  shift 4
+  local response="$(yad --list --title="$title" --text="$menu" --column="$col1" --column="$col2" "$@" --width=600 --height=300)"
   echo "$response"
 }
 yad_message() {
@@ -383,7 +385,7 @@ preloader() {
 # Stage functions.
 stage_mainmenu() {
   # Let the user choose what they want to do on the main menu.
-  local choice="$(yad_menu "Main Menu" "Welcome to $osname! What would you like to do?" \
+  local choice="$(yad_menu "Main Menu" "Welcome to $osname! What would you like to do?" "Option" "Description" \
   "Install" "Begin the installation of $osname." \
   "About" "See information about this installation program." \
   "Restart" "Restart the system." \
@@ -399,7 +401,7 @@ stage_mainmenu() {
 }
 stage_locale() {
   # Ask the user to select a core locale, or "Other" for all locales.
-  local choice="$(yad_menu "Language Setup" "Please select the locale which corresponds to your preferred language. Choose 'Other' to see all locales." "${localescore[@]}" "Other" "Show all available locales")"
+  local choice="$(yad_menu "Language Setup" "Please select the locale which corresponds to your preferred language. Choose 'Other' to see all locales." "Locale" "Description" "${localescore[@]}" "Other" "Show all available locales")"
   choice="${choice%%|*}"
   # Go back to the previous stage if the user backed out.
   if test -z "$choice"; then
@@ -409,7 +411,7 @@ stage_locale() {
   # If the user selected "Other", then go to the submenu.
   if test "$choice" = "Other"; then
     # Ask the user to select from all possible locales.
-    choice="$(yad_menu "Language Setup" "Please select the locale which corresponds to your preferred language. This is the list of all available locales." "${locales[@]}")"
+    choice="$(yad_menu "Language Setup" "Please select the locale which corresponds to your preferred language. This is the list of all available locales." "Locale" "Description" "${locales[@]}")"
     choice="${choice%%|*}"
     # Start locale setup again if the user backed out of this submenu.
     test ! -z "$choice" || return
@@ -420,7 +422,7 @@ stage_locale() {
 }
 stage_keymap() {
   # Ask the user to select a core keymap, or "Other" for all keymaps.
-  local choice="$(yad_menu "Keyboard Setup" "Please select the console keymap which corresponds to your preferred keyboard layout. Choose 'Other' to see all keymaps." "${keymapscore[@]}" "Other" "Show all available keymaps and variants")"
+  local choice="$(yad_menu "Keyboard Setup" "Please select the console keymap which corresponds to your preferred keyboard layout. Choose 'Other' to see all keymaps." "Keymap" "Description" "${keymapscore[@]}" "Other" "Show all available keymaps and variants")"
   choice="${choice%%|*}"
   # Go back to the previous stage if the user backed out.
   if test -z "$choice"; then
@@ -430,7 +432,7 @@ stage_keymap() {
   # If the user selected "Other", then go to the submenu.
   if test "$choice" = "Other"; then
     # Ask the user to select from all possible keymaps.
-    choice="$(yad_menu "Keyboard Setup" "Please select the console keymap which corresponds to your preferred keyboard layout. This is the list of all available keymaps and variants." "${keymaps[@]}")"
+    choice="$(yad_menu "Keyboard Setup" "Please select the console keymap which corresponds to your preferred keyboard layout. This is the list of all available keymaps and variants." "Keymap" "Description" "${keymaps[@]}")"
     choice="${choice%%|*}"
     # Start keymap setup again if the user backed out of this submenu.
     test ! -z "$choice" || return
@@ -441,7 +443,7 @@ stage_keymap() {
 }
 stage_x11key() {
   # Ask the user to select an X11 keymap.
-  local choice="$(yad_menu "Keyboard Setup" "Please select the X11 keymap which best corresponds to your preferred layout. Choose 'Other' to see all keymaps." "${x11keyscore[@]}" "Other" "Show all available keymaps and variants")"
+  local choice="$(yad_menu "Keyboard Setup" "Please select the X11 keymap which best corresponds to your preferred layout. Choose 'Other' to see all keymaps." "Keymap" "Description" "${x11keyscore[@]}" "Other" "Show all available keymaps and variants")"
   choice="${choice%%|*}"
   # Go back to the previous stage if the user backed out.
   if test -z "$choice"; then
@@ -451,7 +453,7 @@ stage_x11key() {
   # If the user selected "Other", then go to the submenu.
   if test "$choice" = "Other"; then
     # Ask the user to select from all possible keymaps.
-    choice="$(yad_menu "Keyboard Setup" "Please select the X11 keymap which corresponds to your preferred keyboard layout. This is the list of all available keymaps and variants." "${x11keys[@]}")"
+    choice="$(yad_menu "Keyboard Setup" "Please select the X11 keymap which corresponds to your preferred keyboard layout. This is the list of all available keymaps and variants." "Keymap" "Description" "${x11keys[@]}")"
     choice="${choice%%|*}"
     # Start keymap setup again if the user backed out of this submenu.
     test ! -z "$choice" || return
@@ -467,13 +469,14 @@ stage_timezone() {
     # Specify whether regions are continents or oceans, to avoid confusion.
     local tzregdesc
     case "$tzregion" in
-      "Arctic"|"Atlantic"|"Indian"|"Pacific") tzregdesc="Ocean" ;;
-      *) tzregdesc="Continent" ;;
+      "Arctic"|"Atlantic"|"Indian"|"Pacific") tzregdesc="$tzregion Ocean Territories" ;;
+      "America") tzregdesc="North, Central and South America" ;;
+      *) tzregdesc="" ;;
     esac
     tzregions+=("$tzregion" "$tzregdesc")
   done
   # Let the user decide which region are in, before finding the cities.
-  local choice_tzregion="$(yad_menu "Timezone Setup" "Please select the region which best corresponds to your geographical location." "${tzregions[@]}")"
+  local choice_tzregion="$(yad_menu "Timezone Setup" "Please select the region which best corresponds to your geographical location." "Region" "Description" "${tzregions[@]}")"
   choice_tzregion="${choice_tzregion%%|*}"
   # Go back to the previous stage if the user backed out.
   if test -z "$choice_tzregion"; then
@@ -490,7 +493,7 @@ stage_timezone() {
   local tzcities=()
   readarray -t tzcities < <(SORTTZ=1 helper_sortentries "${utzcities[@]}")
   # Let the user decide which city they are in from their selected region.
-  local choice_tzcity="$(yad_menu "Timezone Setup" "Please select the city from $choice_tzregion which best corresponds to your geographical location. Note that the UTC offsets, displayed in the right-hand column, will account for daylight saving time where applicable." "${tzcities[@]}")"
+  local choice_tzcity="$(yad_menu "Timezone Setup" "Please select the city from $choice_tzregion which best corresponds to your geographical location. Note that the UTC offsets, displayed in the right-hand column, will account for daylight saving time where applicable." "City" "UTC Offset" "${tzcities[@]}")"
   choice_tzcity="${choice_tzcity%%|*}"
   # Start again from region selection if the user backs out.
   test ! -z "$choice_tzcity" || return
@@ -667,7 +670,7 @@ stage_diskpar() {
     return
   fi
   # Set up the menu.
-  local choice="$(yad_menu "Disk Setup" "Please choose how you would like to set up the disk(s) for installation." \
+  local choice="$(yad_menu "Disk Setup" "Please choose how you would like to set up the disk(s) for installation." "Option" "Description" \
   "1" "Erase an entire disk and install $osname." \
   "2" "Select an existing partition to install $osname to." \
   "3" "Manually create and/or modify partitions before installing." \
@@ -683,7 +686,7 @@ stage_diskpar() {
         diskentries+=("/dev/$disk" "$(($(cat "/sys/block/$disk/size") * 512 / 1073741824))GiB ⎯ $(cat "/sys/block/$disk/device/model")")
       done
       # Now display the entries to the user, so they can choose which disk to use.
-      local choice="$(yad_menu "Disk Setup" "Please select the disk to erase and use for the installation." "${diskentries[@]}")"
+      local choice="$(yad_menu "Disk Setup" "Please select the disk to erase and use for the installation." "Disk" "Description" "${diskentries[@]}")"
       # Restart to the top menu of this function if the user backed out.
       test ! -z "$choice" || return
       # Set up the selection.
@@ -735,7 +738,7 @@ stage_diskpar() {
       # Ask if the user wants swap space.
       if yad_prompt "Erase Disk" "Swap is a reserved area on the disk which can act as an emergency RAM backup in case the system RAM becomes full. Would you like to make use of a swap file?"; then
         # Ask how much swap space the user wants.
-        local choiceswapsize="$(yad_menu "Erase Disk" "Please select the size you wish the swap file to be. Be advised that higher sizes will reduce the amount of free space you have after installation." \
+        local choiceswapsize="$(yad_menu "Erase Disk" "Please select the size you wish the swap file to be. Be advised that higher sizes will reduce the amount of free space you have after installation." "Size" "Note" \
         "2G" "Default" \
         "4G" "" \
         "8G" "" \
@@ -885,7 +888,7 @@ stage_diskpar() {
         return
       fi
       # Ask which root partition to use.
-      local choicerootpar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the root filesystem. It will be formatted, and any existing data on it will be deleted." "${partentries[@]}")"
+      local choicerootpar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the root filesystem. It will be formatted, and any existing data on it will be deleted." "Partition" "Description" "${partentries[@]}")"
       # Go back if the user backed out.
       test ! -z "$choicerootpar" || return
       # Filter yad return value to get the selection.
@@ -917,7 +920,7 @@ stage_diskpar() {
         # Show an information message.
         yad_message "Partition Setup" "Your system is booted in UEFI mode. A separate FAT32 (vfat) partition of around 100MiB-500MiB must therefore exist, to store the bootloader files. If it is used by another OS, it can be shared with MassOS without needing to be re-formatted. Visit go.dmassey.net/of4 for more information."
         # Ask which EFI partition to use.
-        local choiceefipar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the EFI system partition. It must DIFFER from the selection for the root partition." "${partentries[@]}")"
+        local choiceefipar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the EFI system partition. It must DIFFER from the selection for the root partition." "Partition" "Description" "${partentries[@]}")"
         # Go back if the user backed out.
         test ! -z "$choiceefipar" || return
         # Filter yad return value to get the selection.
@@ -943,7 +946,7 @@ stage_diskpar() {
       # Ask if the user wants swap space, same as in erase disk option.
       if yad_prompt "Partition Setup" "Swap is a reserved area on the disk which can act as an emergency RAM backup in case the system RAM becomes full. Would you like to make use of a swap file?"; then
         # Ask how much swap space the user wants.
-        local choiceswapsize="$(yad_menu "Erase Disk" "Please select the size you wish the swap file to be. Be advised that higher sizes will reduce the amount of free space you have after installation." \
+        local choiceswapsize="$(yad_menu "Erase Disk" "Please select the size you wish the swap file to be. Be advised that higher sizes will reduce the amount of free space you have after installation." "Size" "Note" \
         "2G" "Default" \
         "4G" "" \
         "8G" "" \

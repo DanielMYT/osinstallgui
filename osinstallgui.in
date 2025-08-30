@@ -206,6 +206,23 @@ helper_umount() {
   fi
   return $status
 }
+helper_try_umount() {
+  # Check if the filesystem is mounted and try to unmount if so.
+  # Return with 0 for successful unmount or 1 for failure.
+  # Mostly useful in partition setup stage.
+  write_log "Checking mount status of $1."
+  if ! mount | grep -q "$1"; then
+    write_log "$1 is not mounted, we don't need to do anything."
+    return 0
+  fi
+  sync; umount -v "$1" &>>"$log"
+  sync; swapoff -v "$1" &>>"$log"
+  if mount | grep -q "$1"; then
+    write_log "Failed to unmount $1."
+    return 1
+  fi
+  return 0
+}
 helper_chroot_advanced() {
   # Chroot with aspirations - setting up virtual filesystems too.
   # Partially adapted from the 'mass-chroot' utility from MassOS.
@@ -398,6 +415,17 @@ stage_mainmenu() {
     "Shutdown") shutdown -h now ;;
     "Exit"|"") exit 0 ;;
   esac
+}
+stage_initinstall() {
+  # This is a simple intermediary stage to verify there are some disks.
+  # This ensures the user is warned about it BEFORE they proceed with setup.
+  if test "$(find /sys/block -mindepth 1 -maxdepth 1 -type l ! -name dm-\* ! -name fd\* ! -name loop\* ! -name sr\* | wc -l)" = "0"; then
+    yad_message "Error" "The installation cannot start because no physical disks were found on your system. If your internal drive is failing to be detected, please visit go.dmassey.net/of1 for possible troubleshooting tips."
+    stage_dec
+    return
+  fi
+  # Proceed immediately to the next stage.
+  stage_inc
 }
 stage_locale() {
   # Ask the user to select a core locale, or "Other" for all locales.
@@ -857,7 +885,6 @@ stage_diskpar() {
       ;;
     "2")
       # TODO: Rework to not restart on menu backouts or invalid selections.
-      # TODO: Also add separated root/boot support, not just for erase disk.
       # Get a list of every partition on every disk.
       local partentries=()
       for disk in "${disks[@]}"; do
@@ -888,27 +915,15 @@ stage_diskpar() {
         return
       fi
       # Ask which root partition to use.
-      local choicerootpar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the root filesystem. It will be formatted, and any existing data on it will be deleted." "Partition" "Description" "${partentries[@]}")"
+      local choicerootpar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the root filesystem. It will be formatted, and any existing data on it will be deleted. The suggested minimum size is 16GiB." "Partition" "Description" "${partentries[@]}")"
       # Go back if the user backed out.
       test ! -z "$choicerootpar" || return
       # Filter yad return value to get the selection.
       local rootparselection="${choicerootpar%%|*}"
-      # Check if the partition is mounted.
-      if mount | grep -q "$rootparselection"; then
-        # Unmount if needed.
-        if yad_prompt "Warning" "The selected partition appears to be mounted. It must be unmounted before it can be used for the installation of $osname. Would you like this program to try unmounting it for you?"; then
-          # Try to unmount.
-          sync; umount "$rootparselection" &>>/dev/null
-          sync; swapoff "$rootparselection" &>>/dev/null
-          # Check if it is still mounted.
-          if mount | grep -q "$rootparselection"; then
-            yad_message "Error" "This program was unable to unmount the selected partition. Please try to unmount it manually, or alternatively select a different partition."
-            return
-          fi
-        else
-          # Didn't even get a chance to try.
-          return
-        fi
+      # Check if the partition is mounted and try to unmount if so.
+      if ! helper_try_umount "$rootparselection"; then
+        yad_message "Error" "The selected partition $rootparselection is mounted and this program failed to unmount it automatically. Please try to unmount it manually, or alternatively select a different partition."
+        return
       fi
       # Ask whether they want btrfs or ext4, if allowed.
       local btrfsuse=0
@@ -918,9 +933,9 @@ stage_diskpar() {
       # Prompt for selection of an EFI partition if we are in UEFI mode.
       if test $efimode -eq 1; then
         # Show an information message.
-        yad_message "Partition Setup" "Your system is booted in UEFI mode. A separate FAT32 (vfat) partition of around 100MiB-500MiB must therefore exist, to store the bootloader files. If it is used by another OS, it can be shared with MassOS without needing to be re-formatted. Visit go.dmassey.net/of4 for more information."
+        yad_message "Partition Setup" "Your system is booted in UEFI mode. A separate FAT32 (vfat) partition must therefore exist, to store the bootloader files. If it is used by another OS, it can be shared with MassOS without needing to be re-formatted. The suggested size is 100MiB-500MiB. Visit go.dmassey.net/of4 for more information."
         # Ask which EFI partition to use.
-        local choiceefipar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for the EFI system partition. It must DIFFER from the selection for the root partition." "Partition" "Description" "${partentries[@]}")"
+        local choiceefipar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for EFI system. It must DIFFER from the selection for the root partition. The suggested size is 100MiB-500MiB." "Partition" "Description" "${partentries[@]}")"
         # Go back if the user backed out.
         test ! -z "$choiceefipar" || return
         # Filter yad return value to get the selection.
@@ -931,6 +946,11 @@ stage_diskpar() {
           yad_message "Error" "The selected EFI system partition $efiparselection must NOT be the same as the root partition $rootparselection. Please select a different partition."
           return
         fi
+        # Check if the partition is mounted and try to unmount if so.
+        if ! helper_try_umount "$efiparselection"; then
+          yad_message "Error" "The selected partition $efiparselection is mounted and this program failed to unmount it automatically. Please try to unmount it manually, or alternatively select a different partition."
+          return
+        fi
         # If the selected partition is not vfat, then we need to format it.
         local efiformat=0
         if test "$(blkid -o value -s TYPE "$efiparselection")" != "vfat"; then
@@ -939,11 +959,40 @@ stage_diskpar() {
             efiformat=1
           else
             # We cannot use it if the user doesn't want to format it.
-            return;
+            return
           fi
         fi
       fi
+      # Ask if the user wants to use a split boot partition.
+      local splitbootuse=0
+      if yad_prompt "Partition Setup" "Would you like to select a separate partition to use for '/boot'? This can make it easier to use LUKS encryption, but requires a spare partition on the disk, which will be formatted and cannot be the same as your selections for the root or EFI partition. Answer 'NO' if you are unsure. Visit go.dmassey.net/of3 for more clarification about this question."; then
+        # Ask which boot partition to use.
+        local choicebootpar="$(yad_menu "Partition Setup" "Please select the partition you wish to use for boot. It must DIFFER from the selections for the root and EFI partition (if applicable). The suggested size is 1GiB." "Partition" "Description" "${partentries[@]}")"
+        # Go back if the user backed out.
+        test ! -z "$choicebootpar" || return
+        # Filter yad return value to get the selection.
+        local bootparselection="${choicebootpar%%|*}"
+        # The partition must not be the same as root or EFI.
+        if test "$bootparselection" = "$rootparselection" || test "$bootparselection" = "$efiparselection"; then
+          # Did the user STILL not listen to what they were told?
+          # TODO: Handle this more gracefully.
+          if test $efimode -eq 1; then
+            yad_message "Error" "The selected boot partition $bootparselection must NOT be the same as the root partition $rootparselection or the EFI partition $efiparselection."
+          else
+            yad_message "Error" "The selected boot partition $bootparselection must NOT be the same as the root partition $rootparselection."
+          fi
+          return
+        fi
+        # Check if the partition is mounted and try to unmount if so.
+        if ! helper_try_umount "$bootparselection"; then
+          yad_message "Error" "The selected partition $bootparselection is mounted and this program failed to unmount it automatically. Please try to unmount it manually, or alternatively select a different partition."
+          return
+        fi
+        # Mark that split boot is in use.
+        splitbootuse=1
+      fi
       # Ask if the user wants swap space, same as in erase disk option.
+      local swapsize
       if yad_prompt "Partition Setup" "Swap is a reserved area on the disk which can act as an emergency RAM backup in case the system RAM becomes full. Would you like to make use of a swap file?"; then
         # Ask how much swap space the user wants.
         local choiceswapsize="$(yad_menu "Erase Disk" "Please select the size you wish the swap file to be. Be advised that higher sizes will reduce the amount of free space you have after installation." "Size" "Note" \
@@ -951,7 +1000,7 @@ stage_diskpar() {
         "4G" "" \
         "8G" "" \
         "16G" "")"
-        local swapsize="${choiceswapsize%%|*}"
+        swapsize="${choiceswapsize%%|*}"
         # If the user backed out of the menu, use the default value.
         if test -z "$swapsize"; then
           swapsize="2G"
@@ -960,14 +1009,26 @@ stage_diskpar() {
       # Final warning before we format.
       local formatinfo=""
       # Whether or not EFI partition needs formatting.
-      if test $efiformat -eq 1; then
-        formatinfo+="\n$efiparselection as vfat"
+      if test $efimode -eq 1 && test $efiformat -eq 1; then
+        formatinfo+="\n- $efiparselection ($(lsblk -lnp "$efiparselection" | xargs | cut -d' ' -f4)) as vfat [/boot/efi]"
       fi
       # Whether or not the root partition will be formatted as btrfs or ext4.
       if test $btrfsuse -eq 1; then
-        formatinfo+="\n$rootparselection as btrfs"
+        formatinfo+="\n- $rootparselection ($(lsblk -lnp "$rootparselection" | xargs | cut -d' ' -f4)) as btrfs [/]"
       else
-        formatinfo+="\n$rootparselection as ext4"
+        formatinfo+="\n- $rootparselection ($(lsblk -lnp "$rootparselection" | xargs | cut -d' ' -f4)) as ext4 [/]"
+      fi
+      # Whether or not there is a separate boot partition.
+      if test $splitbootuse -eq 1; then
+        if test $btrfsuse -eq 1; then
+          formatinfo+="\n- $bootparselection ($(lsblk -lnp "$bootparselection" | xargs | cut -d' ' -f4)) as btrfs [/boot]"
+        else
+          formatinfo+="\n- $bootparselection ($(lsblk -lnp "$bootparselection" | xargs | cut -d' ' -f4)) as ext4 [/boot]"
+        fi
+      fi
+      # Whether or not there is a swapfile.
+      if test ! -z "$swapsize"; then
+        formatinfo+="\n- $swapsize swap file [/swapfile]"
       fi
       # Display the message, go back if the user backs out.
       yad_prompt "Partition Setup" "The following partition(s) are now going to be formatted, and any existing data will be PERMANENTLY DELETED. This action is IRREVERSIBLE. Are you sure you want to proceed?\n\n$formatinfo" || return
@@ -983,6 +1044,23 @@ stage_diskpar() {
       export tgtswap="$swapsize"
       # Save whether or not we are going to format the EFI system partition.
       export tgtefiformat=$efiformat
+      # Save the boot partition selection if applicable.
+      if test $splitbootuse -eq 1; then
+        export tgtboot="$bootparselection"
+      else
+        # Unset the selection in case it spilled over from a previous back-out.
+        export tgtboot=""
+      fi
+      # Installing GRUB for Legacy BIOS requires the raw disk to be known.
+      # However, we only know about partitions and they could be multi-disk.
+      # So to determine the raw disk, we will use disk of boot partition.
+      # If split-boot is not in use then we will use disk of root partition.
+      # As this is only needed on Legacy BIOS, ignore the EFI system partition.
+      if test $splitbootuse -eq 1; then
+        export tgtdisk="/dev/$(lsblk -no PKNAME "$bootparselection")"
+      else
+        export tgtdisk="/dev/$(lsblk -no PKNAME "$rootparselection")"
+      fi
       # The manual installation method does not support fully portable mode.
       export tgtfullport=0
       # Proceed to the next stage.
@@ -993,7 +1071,7 @@ stage_diskpar() {
       if which gparted &>/dev/null; then
         yad_message "Manual Partitioning" "The GParted graphical partitioning program will be launched. Once you have finished partitioning with this program, close the program, then the installation process will continue."
         write_log "Launching GParted as an external program."
-        gparted "$tgtdisk" &>>"$log"
+        gparted &>>"$log"
         write_log "Execution of GParted as an external program finished."
         return
       else
@@ -1640,24 +1718,25 @@ while test $stage -ge 0; do
   # Run the function corresponding to the stage we are currently on.
   case $stage in
     0) stage_mainmenu ;;
-    1) stage_locale ;;
-    2) stage_keymap ;;
-    3) stage_x11key ;;
-    4) stage_timezone ;;
-    5) stage_rootpw ;;
-    6) stage_usersetup ;;
-    7) stage_userpw ;;
-    8) stage_hostname ;;
-    9) stage_diskpar ;;
-    10) stage_luks ;;
-    11) stage_format ;;
-    12) stage_mount ;;
-    13) stage_swapsetup ;;
-    14) stage_installation ;;
-    15) stage_postinstall ;;
-    16) stage_systemconfig ;;
-    17) stage_initramfs ;;
-    18) stage_bootloader ;;
-    19) stage_finish ;;
+    1) stage_initinstall ;;
+    2) stage_locale ;;
+    3) stage_keymap ;;
+    4) stage_x11key ;;
+    5) stage_timezone ;;
+    6) stage_rootpw ;;
+    7) stage_usersetup ;;
+    8) stage_userpw ;;
+    9) stage_hostname ;;
+    10) stage_diskpar ;;
+    11) stage_luks ;;
+    12) stage_format ;;
+    13) stage_mount ;;
+    14) stage_swapsetup ;;
+    15) stage_installation ;;
+    16) stage_postinstall ;;
+    17) stage_systemconfig ;;
+    18) stage_initramfs ;;
+    19) stage_bootloader ;;
+    20) stage_finish ;;
   esac
 done

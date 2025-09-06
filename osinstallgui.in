@@ -433,7 +433,7 @@ stage_locale() {
   choice="${choice%%|*}"
   # Go back to the previous stage if the user backed out.
   if test -z "$choice"; then
-    stage_dec
+    stage_dec; stage_dec
     return
   fi
   # If the user selected "Other", then go to the submenu.

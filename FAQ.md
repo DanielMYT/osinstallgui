@@ -57,23 +57,21 @@ files, so existing deployments should not need altering (unless the default
 behaviour in the newly added feature is undesired).
 
 ## The dependencies seem arbitrary
-We can assure you they are not. While some of **osinstallgui**'s dependencies
-are fairly self-explanatory, here is a detailed explanation of why others are
-required:
+While some of **osinstallgui**'s dependencies are fairly self-explanatory, here
+is a detailed explanation of why others are required:
 
-- **gptfdisk** and **parted**: We know what you're thinking. Why are these
-  antiquated partitioning tools needed? And the answer is, the partitioning
-  tools themselves aren't. **osinstallgui** uses `fdisk` to partition the disk
-  under the hood, and supports the **gparted** graphical utility for manual
-  partitioning. However, both packages provide supplementary utilities which
-  are required for the "Erase Disk" functionality of **osinstallgui**. The
-  former utility provides the `sgdisk` command, whose `-Z` option can be used
-  to wipe all GPT and MBR partition tables from disks, while the latter
-  provides `partprobe`, which is used to sync the disk changes with the kernel
-  after partitioning is done. While the disk erasure process could, in theory,
-  be done without them, using them ensures consistency and redundancy, which is
-  extremely important when you are dealing with operations which could
-  potentially cause data loss or disk damage if they go wrong.
+- **gptfdisk** and **parted**: These partitioning tools themselves aren't used,
+  as **osinstallgui** uses `fdisk` to partition the disk under the hood, and
+  supports the **gparted** graphical utility for manual partitioning. However,
+  both packages provide supplementary utilities which are required for the
+  "Erase Disk" functionality of **osinstallgui**. The former utility provides
+  the `sgdisk` command, whose `-Z` option can be used to wipe all GPT and MBR
+  partition tables from disks, while the latter provides `partprobe`, which is
+  used to sync the disk changes with the kernel after partitioning is done.
+  While the disk erasure process could, in theory, be done without them, using
+  them ensures consistency and redundancy, which is extremely important when
+  dealing with operations which could potentially cause data loss if they go
+  wrong.
 - **libxkbcommon** and **yq**: These programs are required for finding the
   available X11 keymaps on the system. The former is needed because it contains
   the `xkbcli` program, which, when run as `xkbcli list`, gives a full output
@@ -245,8 +243,8 @@ same EFI partition, and will not conflict with each other, and the partition
 will not need to be re-formatted if it is already **FAT32**.
 
 ## No physical disks were found
-Here are the following most likely causes of your internal disk failing to be
-detected, including how you may be able to fix them.
+Here is the following most likely cause of your internal disk failing to be
+detected, including how you may be able to fix it.
 
 ### SATA mode not set to AHCI
 Your system may default to setting the **SATA Mode** or **Storage Mode** of
@@ -267,20 +265,6 @@ by pressing the **F10** key), and the disk should now display in
 Note that there may also be other RAID or RST-related options in the BIOS. If
 changing the SATA mode alone doesn't fix it, then ensure those other options
 are also turned off.
-
-### Windows Bitlocker drive encryption
-Modern versions of Windows have **Bitlocker** (or a similar disk encryption
-system) enabled by default. In some cases, this can cause your internal drive
-to fail to be detected. Since Bitlocker drive encryption is a security measure,
-especially on portable devices like laptops which may be stolen, you may not
-want to disable it. If this is the case, we recommend instead installing on a
-different internal disk if you have one, or a portable SSD/HDD if you don't.
-
-Note that on the Home edition of Windows, Bitlocker may instead be named
-**Windows Device Encryption** or something similar, and accessible from normal
-Windows settings instead of control panel.
-
-Once Bitlocker is disabled, your disk should now show up.
 
 ## What is LUKS encryption and do I need it?
 LUKS encryption is a method of encrypting the root filesystem of your new OS
@@ -330,8 +314,8 @@ installation from a separate live environment.
   command-line parameters for booting from a LUKS-encrypted volume. The exact
   parameters needed will depend on the initramfs system in use. But GRUB, in
   its pure vanilla state, may make use of command-line arguments that are not
-  appropriate for LUKS setups. The patch used in MassOS for dracut can be found
-  [here](https://github.com/MassOS-Linux/MassOS/blob/development/patches/grub-2.12-luksdracut.patch).
+  appropriate for LUKS setups. The patch for GRUB that MassOS uses can be found
+  [here](https://github.com/MassOS-Linux/MassOS/blob/0f50c3c3/patches/grub-2.12-luksrootfs.patch).
 - `OSINSTALLGUI_ALLOW_LUKS` must not be set to `0` in the **osinstallgui**
   configuration file (either set to `1`, or omitted, which defaults to `1`).
 
@@ -413,10 +397,11 @@ system is booted in Legacy BIOS mode instead of UEFI.
 
 ## There is no Windows boot option after installation for a dual-boot
 There exists a known bug with the **os-prober** package, whereby it is unable
-to detect a Windows installation while in a chroot environment. As a result,
-Windows does not get added as a boot entry to the GRUB menu like it should.
-This is not a bug specific to one distro, and in fact it has been reported on
-many distros, including the following:
+to detect a UEFI Windows installation while in a chroot environment (Legacy
+BIOS installations are unaffected). As a result, Windows does not get added as
+a boot entry to the GRUB menu like it should. This is not a bug specific to one
+distro, and in fact it has been reported on many distros, including the
+following:
 
 - https://www.reddit.com/r/archlinux/comments/10gyqjs/osprober_wont_detect_windows/
 - https://www.reddit.com/r/artixlinux/comments/ldg00f/osprober_not_detecting_windows_in_the_chroot/
@@ -440,6 +425,10 @@ GRUB_DISABLE_OS_PROBER=false
 Assuming both of these are true, Windows should now be detected when re-running
 the `grub-mkconfig` command above, and should be added as an entry to the boot
 menu.
+
+Note that it is normal for the Windows entry in GRUB on UEFI systems to be
+listed as **Windows Boot Manager**. On Legacy BIOS systems, the actual version
+of Windows will display instead, e.g., **Windows 10**.
 
 ## The program doesn't run
 A few troubleshooting steps can help you work out why **osinstallgui** doesn't

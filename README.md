@@ -62,6 +62,12 @@ package, but particularly its command-line utilities.
   present, the user will be given the choice as to whether they want to use
   ext4 or btrfs, unless `OSINSTALLGUI_ALLOW_BTRFS` is set to `0` in the
   osinstallgui configuration file).
+- **cryptsetup**, to allow the user to enable disk encryption using LUKS (if
+  not present, the user will not be given such a choice - if it IS present,
+  you can set `OSINSTALLGUI_ALLOW_LUKS` to `0` in osinstallgui's configuration
+  file to forcibly disable it). Please note that the GRUB bootloader may need
+  modifications to be able to properly support booting from a LUKS encrypted
+  partition - see the FAQ document for detailsd.
 - **dmidecode**, to allow the system model to be determined, for the default
   hostname (if not present, "PC" will be used as a fallback, but the user can,
   of course, still customise the hostname themselves and override the default).

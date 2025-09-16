@@ -102,6 +102,7 @@ fr-pc: French for PC
 ge: Georgian
 gr: Greek
 gr-pc: Greek for PC
+hcesar: Portuguese HCESAR
 hu: Hungarian
 hu101: Hungarian 101-key
 ie: Irish
@@ -208,6 +209,7 @@ se-lat6: Swedish (Latin-6)
 sg: Swiss German
 sg-latin1: Swiss German (Latin-1)
 sg-latin1-lk450: Swiss German for LK450 (Latin-1)
+sg-mac: Swiss German for Mac
 sk-prog-qwerty: Slovak programmer's QWERTY
 sk-prog-qwertz: Slovak programmer's QWERTZ
 sk-qwerty: Slovak QWERTY

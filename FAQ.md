@@ -114,6 +114,40 @@ variant options are set separately. Additionally, some layout names differ
 between console and X11 maps. For example, **English (United Kingdom)** is `uk`
 in the console keymap system, while it is `gb` in the X11 keymap system.
 
+## Why does osinstallgui complain that my specified hostname is invalid?
+The specifications that define how networks work are very strict on hostnames.
+Any system with a hostname that does not comply with these specifications is at
+risk of encountering problems. Other devices on the network, or even the
+network itself, may refuse to recognize the machine, despite the fact that the
+Linux kernel itself generally doesn't have issues with longer hostnames.
+
+The requirements are as follows:
+
+- The hostname must **NOT** be empty.
+- The hostname must **NOT** exceed 63 characters.
+- The hostname can **ONLY** contain alphanumeric characters and dashes (`-`).
+- The hostname **CANNOT** contain spaces.
+- The hostname **CANNOT** start or end with a dash (`-`).
+
+**osinstallgui** enforces these requirements for the compatibility reasons
+discussed above. When you enter your desired hostname, it will truncate your
+entry to the first 63 characters if it exceeds it. It will then strip out any
+disallowed characters (see above requirements) in the hostname. Finally, it
+will replace any spaces you've entered with dashes. Once this is done,
+**osinstallgui** will perform checks to ensure that the just-processed hostname
+(a) is not empty, and (b) does not start or end with a space. If either of
+these checks don't pass, **osinstallgui** displays an error message, and asks
+you to enter a new hostname which is compliant with these requirements. Even if
+you thought the hostname you entered was compliant with the requirements, it is
+possible that the processing done by **osinstallgui**, of filtering out special
+characters, amongst other tasks, has caused the resultant hostname to be
+non-compliant.
+
+To avoid this problem, ensure the hostname you enter complies with the five
+requirements listed above to begin with. Do not use special characters or
+spaces, and do not enter a hostname that is longer than 63 characters. By doing
+so, you should be able to pass the check without issues.
+
 ## Why am I asked about creating a fully portable installation?
 **NOTE:** As of **osinstallgui** version `0.9.4`, the fully portable
 installation will only be offered (and therefore you will only be prompted) if

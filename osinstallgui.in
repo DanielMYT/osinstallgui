@@ -660,13 +660,21 @@ stage_hostname() {
     return
   fi
   # Filter out special characters from the hostname, and truncate to 255.
-  hostname="$(echo "$hostname" | tr -cd '[:alnum:] [:space:] -' | sed 's/ /-/g' | cut -c1-255)"
+  hostname="$(echo "$hostname" | tr -cd '[:alnum:] [:space:] -' | sed 's/ /-/g' | cut -c1-63)"
   # Ensure the hostname is not empty.
   if test -z "$hostname"; then
     # Complain and try again.
-    yad_message "Error" "The system hostname must not be left blank."
+    yad_message "Error" "The system hostname must not be left blank. See go.dmassey.net/of6 for more information."
     return
   fi
+  # Ensure the hostname does not begin or end with a dash.
+  case "$hostname" in
+    -*|*-)
+      # Complain and try again.
+      yad_message "Error" "The system hostname must not start or end with a dash. See go.dmassey.net/of6 for more information."
+      return
+      ;;
+  esac
   # Save our work.
   export tgthostname="$hostname"
   # Move on to the next stage.

@@ -650,7 +650,7 @@ stage_hostname() {
   # We will also strip out non-alphanumeric/non-space/non-dash characters.
   # And then we will replace all spaces with dashes.
   # This is to be compliant with the hostname requirements.
-  local defaulthostname="$tgtusername-$({ dmidecode -s system-product-name 2>/dev/null || echo "PC"; } | tr -cd '[:alnum:] [:space:] -' | sed 's/ /-/g')"
+  local defaulthostname="$tgtusername-$({ dmidecode -s system-product-name 2>/dev/null || echo "PC"; } | tr -cd '[:alnum:] [:space:] -' | sed 's/ \+/-/g')"
   # Collect the input using the default hostname as the default/placeholder.
   local hostname
   hostname="$(yad_input "Hostname" "Please enter your desired hostname which will identify this computer to the network." "$defaulthostname")"

@@ -1139,7 +1139,7 @@ stage_format() {
   coproc formatprogress { yad --progress --title="Loading... ⎯ $inv" --text="The partitions are being formatted, please be patient." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100; }
   # Deal with LUKS encryption support using cryptsetup.
   if test $tgtluks -eq 1; then
-    # Format to LUKS and open as a mapper device (/dev/mapper/cryptroot).
+    # Format to LUKS and open as a mapper device (/dev/mapper/<name>).
     # Note that argon2 is unsupported by GRUB - make sure pbkdf2 is used.
     # Also use 1M, as it's the best tradeoff between boot speed and security.
     write_log "Formatting $tgtroot for LUKS encryption."
@@ -1150,17 +1150,17 @@ stage_format() {
       stage_dec; stage_dec
       return
     fi
-    echo -n "$tgtlukspw" | cryptsetup open "$tgtroot" cryptroot - &>>"$log"
+    echo -n "$tgtlukspw" | cryptsetup open "$tgtroot" "$OSINSTALLGUI_LUKS_MAPPER_NAME" - &>>"$log"
     if test $? -ne 0; then
       yad_message "Error" "Failed to open the newly created LUKS-encrypted filesystem. A log file can be found at $log."
       # Forcibly close the cryptsetup device just in case something weird happened.
-      cryptsetup close cryptroot &>>/dev/null
+      cryptsetup close "$OSINSTALLGUI_LUKS_MAPPER_NAME" &>>/dev/null
       stage_dec; stage_dec
       return
     fi
-    # Set tgtroot to /dev/mapper/cryptroot, and then save raw root partition.
+    # Set tgtroot to /dev/mapper/<name>, and then save raw root partition.
     export tgtluksraw="$tgtroot"
-    export tgtroot="/dev/mapper/cryptroot"
+    export tgtroot="/dev/mapper/$OSINSTALLGUI_LUKS_MAPPER_NAME"
   fi
   echo "50" >&"${formatprogress[1]}"
   # Determine the label for the root filesystem, based on OS name.
@@ -1375,7 +1375,7 @@ stage_systemconfig() {
       echo "# This is because the installation was configured to use LUKS."
       echo "# Do not modify it, as it could prevent the system from booting."
       # Cryptroot entry.
-      echo "cryptroot UUID=$(blkid -o value -s UUID "$tgtluksraw") none luks"
+      echo "$OSINSTALLGUI_LUKS_MAPPER_NAME UUID=$(blkid -o value -s UUID "$tgtluksraw") none luks"
     } > "$tgtpath"/etc/crypttab
   fi
   write_log "Finished generation of /etc/fstab for the target system."
@@ -1598,7 +1598,7 @@ stage_finish() {
   write_log "Unmounting all filesystems..."
   helper_umount "$tgtpath"
   if test $tgtluks -eq 1; then
-    cryptsetup close cryptroot &>>"$log"
+    cryptsetup close "$OSINSTALLGUI_LUKS_MAPPER_NAME" &>>"$log"
   fi
   write_log "Finished unmounting all filesystems (hopefully)."
   # Show finishing message.
@@ -1660,6 +1660,7 @@ fi
 # Set up defaults for configuration values which are not mandatory.
 test ! -z "$OSINSTALLGUI_ALLOW_BTRFS" || OSINSTALLGUI_ALLOW_BTRFS=1
 test ! -z "$OSINSTALLGUI_ALLOW_LUKS" || OSINSTALLGUI_ALLOW_LUKS=1
+test ! -z "$OSINSTALLGUI_LUKS_MAPPER_NAME" || OSINSTALLGUI_LUKS_MAPPER_NAME="cryptroot"
 test ! -z "$OSINSTALLGUI_ALWAYS_OFFER_FULLPORT" || OSINSTALLGUI_ALWAYS_OFFER_FULLPORT=0
 test ! -z "$OSINSTALLGUI_KEYMAPS_SYSTEMD" || OSINSTALLGUI_KEYMAPS_SYSTEMD=1
 test ! -z "$OSINSTALLGUI_KEYMAPS_LOCATION" || OSINSTALLGUI_KEYMAPS_LOCATION="/usr/share/keymaps"

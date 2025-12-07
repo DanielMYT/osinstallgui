@@ -1141,9 +1141,14 @@ stage_format() {
   if test $tgtluks -eq 1; then
     # Format to LUKS and open as a mapper device (/dev/mapper/<name>).
     # Note that argon2 is unsupported by GRUB - make sure pbkdf2 is used.
-    # Also use 1M, as it's the best tradeoff between boot speed and security.
+    # Use 1M if we are limited by GRUB, 2M if we unlock at initramfs-stage.
+    if test ! -z "$tgtboot"; then
+      local luksiterations=2000000
+    else
+      local luksiterations=1000000
+    fi
     write_log "Formatting $tgtroot for LUKS encryption."
-    echo -n "$tgtlukspw" | cryptsetup luksFormat "$tgtroot" --type luks2 --pbkdf pbkdf2 --pbkdf-force-iterations 1000000 - &>>"$log"
+    echo -n "$tgtlukspw" | cryptsetup luksFormat "$tgtroot" --type luks2 --pbkdf pbkdf2 --pbkdf-force-iterations "$luksiterations" - &>>"$log"
     if test $? -ne 0; then
       write_log "Failed to format $tgtroot for LUKS encryption."
       yad_message "Error" "Failed to format the root filesystem $tgtroot for LUKS encryption. A log file can be found at $log."

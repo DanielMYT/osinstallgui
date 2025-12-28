@@ -321,6 +321,11 @@ when performing IO-intensive disk operations, as well as less convenience when
 it comes to performing system recovery or debugging an existing GNU/Linux
 installation from a separate live environment.
 
+Please note that LUKS encryption is **NOT** recommended for use on virtual
+machines. Instead, it is recommended to encrypt the virtual machine (either the
+entire VM, or just its virtual HDD) using the virtualization software's inbuilt
+functionality.
+
 ### Important notes about LUKS encryption
 - If you select to enable LUKS when prompted by **osinstallgui**, you will be
   required to create an encryption passphrase. This passphrase does not need to
@@ -352,6 +357,15 @@ installation from a separate live environment.
   [here](https://github.com/MassOS-Linux/MassOS/blob/0f50c3c3/patches/grub-2.12-luksrootfs.patch).
 - `OSINSTALLGUI_ALLOW_LUKS` must not be set to `0` in the **osinstallgui**
   configuration file (either set to `1`, or omitted, which defaults to `1`).
+- For distribution maintainers: If you wish to use the newer and more resilient
+  **ARGON2** encryption algorithm, over the older **PBKDF2** algorithm, you
+  must ensure GRUB supports it. At the time of writing, only the most recent
+  bleeding-edge version of GRUB supports it (**2.14-rc1**) - Older versions do
+  not. Verify your GRUB supports it and enable it by setting the configuration
+  option `OSINSTALLGUI_LUKS_ARGON2` to `1`. End users needn't worry about this.
+  **PBKDF2** with a high enough forced iteration count is still considered
+  secure by modern standards. **ARGON2** just offers an (overkill) level of
+  protection against GPU-based brute force attacks.
 
 ## Why am I asked about installing GRUB in Internal or Removable mode?
 **NOTE:** This information is only relevant to an older version of

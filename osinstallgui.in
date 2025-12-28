@@ -1140,15 +1140,17 @@ stage_format() {
   # Deal with LUKS encryption support using cryptsetup.
   if test $tgtluks -eq 1; then
     # Format to LUKS and open as a mapper device (/dev/mapper/<name>).
-    # Note that argon2 is unsupported by GRUB - make sure pbkdf2 is used.
-    # Use 1M if we are limited by GRUB, 2M if we unlock at initramfs-stage.
-    if test ! -z "$tgtboot"; then
-      local luksiterations=2000000
+    # ARGON2 is now supported by GRUB as of 2.14-rc1. Use it if requested.
+    # Otherwise fallback to PBKDF2, the tried-and-true algorithm.
+    if test "$OSINSTALLGUI_LUKS_ARGON2" = "1"; then
+      # TODO: Evaluate these parameters. Are they the most ideal for us?
+      # TODO: The goal is security, but still compatibility for weak systems.
+      local cryptargs="--pbkdf argon2id --pbkdf-memory 131072 --pbkdf-time 3 --pbkdf-parallel 2"
     else
-      local luksiterations=1000000
+      local cryptargs="--pbkdf pbkdf2 --pbkdf-force-iterations 2000000"
     fi
-    write_log "Formatting $tgtroot for LUKS encryption."
-    echo -n "$tgtlukspw" | cryptsetup luksFormat "$tgtroot" --type luks2 --pbkdf pbkdf2 --pbkdf-force-iterations "$luksiterations" - &>>"$log"
+    write_log "Formatting $tgtroot for LUKS encryption ($cryptargs)."
+    echo -n "$tgtlukspw" | cryptsetup luksFormat "$tgtroot" --type luks2 $cryptargs - &>>"$log"
     if test $? -ne 0; then
       write_log "Failed to format $tgtroot for LUKS encryption."
       yad_message "Error" "Failed to format the root filesystem $tgtroot for LUKS encryption. A log file can be found at $log."
@@ -1666,6 +1668,7 @@ fi
 test ! -z "$OSINSTALLGUI_ALLOW_BTRFS" || OSINSTALLGUI_ALLOW_BTRFS=1
 test ! -z "$OSINSTALLGUI_ALLOW_LUKS" || OSINSTALLGUI_ALLOW_LUKS=1
 test ! -z "$OSINSTALLGUI_LUKS_MAPPER_NAME" || OSINSTALLGUI_LUKS_MAPPER_NAME="cryptroot"
+test ! -z "$OSINSTALLGUI_LUKS_ARGON2" || OSINSTALLGUI_LUKS_ARGON2=0
 test ! -z "$OSINSTALLGUI_ALWAYS_OFFER_FULLPORT" || OSINSTALLGUI_ALWAYS_OFFER_FULLPORT=0
 test ! -z "$OSINSTALLGUI_KEYMAPS_SYSTEMD" || OSINSTALLGUI_KEYMAPS_SYSTEMD=1
 test ! -z "$OSINSTALLGUI_KEYMAPS_LOCATION" || OSINSTALLGUI_KEYMAPS_LOCATION="/usr/share/keymaps"

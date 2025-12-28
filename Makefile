@@ -41,3 +41,6 @@ help:
 	@echo ""
 	@echo "  BINDIR : Program location (/usr/bin)"
 	@echo "  DATADIR: Config file and data location (/usr/share/osinstallgui)"
+
+version:
+	@echo "$(OSINSTALLGUI_VERSION)"

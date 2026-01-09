@@ -1145,7 +1145,7 @@ stage_format() {
     if test "$OSINSTALLGUI_LUKS_ARGON2" = "1"; then
       # TODO: Evaluate these parameters. Are they the most ideal for us?
       # TODO: The goal is security, but still compatibility for weak systems.
-      local cryptargs="--pbkdf argon2id --pbkdf-memory 131072 --pbkdf-time 3 --pbkdf-parallel 2"
+      local cryptargs="--pbkdf argon2id --pbkdf-memory 131072 --pbkdf-parallel 2 --pbkdf-force-iterations 4"
     else
       local cryptargs="--pbkdf pbkdf2 --pbkdf-force-iterations 2000000"
     fi

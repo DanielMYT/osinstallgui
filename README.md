@@ -43,7 +43,7 @@ otherwise stated, when a package is listed here, it is referring to the ENTIRE
 package, but particularly its command-line utilities.
 
 ## Required dependencies
-- **bash**, to run the program.
+- **Bash**, to run the program (version **4.0** or higher is required).
 - **dosfstools**, to allow creation of a FAT32 EFI System Partition.
 - **e2fsprogs**, to allow the user to use ext4 for the root partition (even if
   **btrfs-progs** is installed as mentioned below, this package is still

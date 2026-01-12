@@ -15,7 +15,7 @@ GNU/Linux distribution.
 the TUI-based installation program from MassOS, using GTK3-based **yad**
 instead of ncurses-based **dialog**. However, it has also been redesigned
 and reimagined from the ground-up to be more distribution-independent, through
-the use of a single well-documented configuration file which can be customised
+the use of a single well-documented configuration file which can be customized
 to suit the needs of other distribution maintainers. The underlying logic has
 also been completely revamped, so as to make the program more reliable under
 the hood, as well as easier to maintain.
@@ -70,10 +70,12 @@ package, but particularly its command-line utilities.
   partition - see the FAQ document for details.
 - **dmidecode**, to allow the system model to be determined, for the default
   hostname (if not present, "PC" will be used as a fallback, but the user can,
-  of course, still customise the hostname themselves and override the default).
+  of course, still customize the hostname themselves and override the default).
 - **gparted**, to allow the user to manually create/modify partitions using
   this external program. The manual partitioning option will be unavailable if
   this is not present.
+- **polkit**, for the `pkexec` utility, which is required for osinstallgui to
+  run unprivileged (running wholly as root does not require `pkexec`).
 
 ## Optional dependencies
 - **cracklib**, to enable enforcing of strong passwords for user accounts.
@@ -99,7 +101,7 @@ following command:
 make
 ```
 By default, this will set the directory for config and data to
-`/usr/share/osinstallgui`. If this is undesired, you can customise it by
+`/usr/share/osinstallgui`. If this is undesired, you can customize it by
 instead using the following command:
 ```
 make DATADIR=/path/to/custom/datadir
@@ -109,12 +111,12 @@ which may require root privileges depending on your environment:
 ```
 make install
 ```
-If you customised the data directory as mentioned above, then instead run the
+If you customized the data directory as mentioned above, then instead run the
 following command to ensure the files get installed in the same place:
 ```
 make DATADIR=/path/to/custom/datadir install
 ```
-You may also wish to customise where the binary gets installed (the default
+You may also wish to customize where the binary gets installed (the default
 location is `/usr/bin`). Note that this option only needs to be passed during
 installation, and doesn't need to be set during the preparation stage. It can
 be set instead of or as well as the DATADIR option:
@@ -138,34 +140,71 @@ run without them), and which are **optional** (the program will assume defaults
 if they are unset). For robustness, we always recommend ensuring every possible
 configuration option is set, however.
 
+# Running
+As of **osinstallgui** version `0.13.0`, the program now supports being run
+either wholly privileged (as root), or unprivileged (as a normal user). The
+former option was the only available method in older versions, and it has the
+limitation of not being able to run under Wayland sessions, which are more
+restrictive/hardened in nature compared to Xorg sessions.
+
+The latter option is now recommended for use on modern systems. This will cause
+the program itself to run unprivileged, and only elevate privileges as and when
+it needs to as part of the system installation process. It will do this by
+using `pkexec` - thus, it requires **Polkit** to be installed on the host
+system. Furthermore, a suitable Polkit rule is also strongly recommended to be
+in use for the live system user, which succeeds authentication by default
+without prompting for a password (as should be consistent with sudo and other
+authentication programs that may be used by the live user under a live CD). If
+there is no such rule, then the user will be bombarded with password prompts
+throughout the program's execution, which is not ideal. A suitable Polkit rule
+may look like the following:
+```js
+// Potential location for this file: /etc/polkit-1/rules.d/49-live.rules
+// Example rule to auto-succeed elevation without password in live environment.
+// Remember to replace the placeholder with the actual username of live user.
+polkit.addRule(function(action, subject) {
+  if (subject.isInGroup("<USERNAME-OF-LIVE-USER>")) {
+    return polkit.Result.YES;
+  }
+});
+```
+
 # Desktop Integration
-An example desktop file is provided in this source tree, but it does not get
-installed by default. To integrate properly into a desktop environment, you
-should customise the **osinstallgui.desktop.example** file, and replace the
-placeholders (i.e., the name of the distro and the distro's logo/icon) so it
-represents your distro.
+Two example desktop files are provided in this source tree, but they do not get
+installed by default. The file named **osinstallgui.desktop.example** is the
+_TRADITIONAL_ running method, where the program runs entirely as root. As
+discussed above, as of version of `0.13.0`, the program can now run
+unprivileged. For this, there is a new separate desktop entry called
+**osinstallgui.desktop.example.unprivileged**. To integrate properly into a
+desktop environment, you should customize one of the aforementioned files, and
+install it into a suitable location, such as
+`/usr/share/applications/osinstallgui.desktop` (taking note that the
+**.example** part is removed). You can also place the file on the desktop of
+the live user's account, if desired, for additional convenience.
 
-**NOTE:** You also need to replace the `<user>` placeholder in the `Exec=` line
-in order for the program to launch properly. It should be set to the username
-of the Live CD user. For example, the full line might look like this when
-edited:
+In both files, you can customize the `Name=` and `Comment=` fields, to make it
+specific for your own distro. You can put your distro's name/version here. You
+can also point the `Icon=` field to your distro's logo or something similar.
+
+The **.example.unprivileged** file does not require any further customization.
+However, the **.example** (wholly-privileged) file will require the following
+further customization:
+
+You also need to replace the `<user>` placeholder in the `Exec=` line in order
+for the program to launch properly. It should be set to the username of the
+Live CD user. For example, the full line might look like this when edited:
 ```
-Exec=pkexec env DISPLAY=":0" XAUTHORITY="/home/massos/.Xauthority" osinstallgui
+Exec=pkexec env DISPLAY=":0" XAUTHORITY="/home/live/.Xauthority" osinstallgui
 ```
-
-Once you've customised this file, it obviously needs to be renamed as
-**osinstallgui.desktop** (removing the **.example** extension), and then it can
-be installed in one or both of the following places:
-
-- **/usr/share/applications** - In the system application list.
-- **/home/\<name-of-live-user>/Desktop** - On the desktop of the live system.
 
 Note that the `pkexec` command listed in the desktop entry file is written in
 such a way to ensure the program runs successfully. Unlike `sudo`, which would
 respect the user's environment variables, `pkexec` does not. As a result, GUI
 programs will not correctly run as root unless the `DISPLAY` and `XAUTHORITY`
 environment variables are manually set. This is why a modification is required
-as described above.
+as described above. Alternatively, you can use the other desktop file, which
+runs the program unprivileged, and therefore does not require any such quirk or
+modification (but may instead require a Polkit rule as described above).
 
 # Troubleshooting
 If something goes wrong during the installation, it's very possible that it was

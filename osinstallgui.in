@@ -50,6 +50,16 @@ warn() {
   write_log "WARNING: $*"
 }
 
+# Elevate privileges when we need to.
+# This is required because osinstallgui can now run unprivileged.
+priv() {
+  if test $EUID -ne 0; then
+    pkexec "$@"
+  else
+    "$@"
+  fi
+}
+
 # Check dependency - exit if they are not found.
 check_dep() {
   # $1 is the program, $2 is the package it comes from (if different).
@@ -173,10 +183,10 @@ helper_sortentries() {
 helper_format() {
   write_log "Trying to format $1 as $2."
   case "$2" in
-    ext4) mkfs.ext4 -vFL "$3" "$1" &>>"$log" ;;
-    btrfs) mkfs.btrfs -vfL "$3" "$1" &>>"$log" ;;
-    swap) mkswap "$1" &>>"$log" ;;
-    vfat) mkfs.fat -F32 -vn "$3" "$1" &>>"$log" ;;
+    ext4) priv mkfs.ext4 -vFL "$3" "$1" &>>"$log" ;;
+    btrfs) priv mkfs.btrfs -vfL "$3" "$1" &>>"$log" ;;
+    swap) priv mkswap "$1" &>>"$log" ;;
+    vfat) priv mkfs.fat -F32 -vn "$3" "$1" &>>"$log" ;;
   esac
   local status=$?
   if test $status -eq 0; then
@@ -188,8 +198,8 @@ helper_format() {
 }
 helper_mount() {
   write_log "Trying to mount $1 at $2."
-  mkdir -pv "$2" &>>"$log"
-  mount -v "$1" "$2" &>>"$log"
+  priv mkdir -pv "$2" &>>"$log"
+  priv mount -v "$1" "$2" &>>"$log"
   local status=$?
   if test $status -eq 0; then
     write_log "$1 was successfully mounted at $2."
@@ -200,7 +210,7 @@ helper_mount() {
 }
 helper_umount() {
   write_log "Trying to unmount $1."
-  umount -Rv "$1" &>>"$log"
+  priv umount -Rv "$1" &>>"$log"
   local status=$?
   if test $status -eq 0; then
     write_log "$1 was successfully unmounted."
@@ -218,8 +228,8 @@ helper_try_umount() {
     write_log "$1 is not mounted, we don't need to do anything."
     return 0
   fi
-  sync; umount -v "$1" &>>"$log"
-  sync; swapoff -v "$1" &>>"$log"
+  sync; priv umount -v "$1" &>>"$log"
+  sync; priv swapoff -v "$1" &>>"$log"
   if mount | grep -q "$1"; then
     write_log "Failed to unmount $1."
     return 1
@@ -235,32 +245,32 @@ helper_chroot_advanced() {
   write_log "Trying to enter an advanced chroot in $chrootdir."
   # Mount virtual filesystems.
   sync
-  mount -v --bind /dev "$chrootdir"/dev &>>"$log" || return
-  mount -v --bind /dev/pts "$chrootdir"/dev/pts &>>"$log" || return
-  mount -vt tmpfs devshm "$chrootdir"/dev/shm &>>"$log" || return
-  mount -vt proc proc "$chrootdir"/proc &>>"$log" || return
-  mount -vt sysfs sysfs "$chrootdir"/sys &>>"$log" || return
-  mount -vt tmpfs tmpfs "$chrootdir"/run &>>"$log" || return
-  mkdir -vp "$chrootdir"/run/lock &>>"$log"
+  priv mount -v --bind /dev "$chrootdir"/dev &>>"$log" || return
+  priv mount -v --bind /dev/pts "$chrootdir"/dev/pts &>>"$log" || return
+  priv mount -vt tmpfs devshm "$chrootdir"/dev/shm &>>"$log" || return
+  priv mount -vt proc proc "$chrootdir"/proc &>>"$log" || return
+  priv mount -vt sysfs sysfs "$chrootdir"/sys &>>"$log" || return
+  priv mount -vt tmpfs tmpfs "$chrootdir"/run &>>"$log" || return
+  priv mkdir -vp "$chrootdir"/run/lock &>>"$log"
   if test $efimode -eq 1; then
     # Need to also mount efivarfs filesystem for UEFI boot mode.
-    mount -vt efivarfs efivarfs "$chrootdir"/sys/firmware/efi/efivars &>>"$log" || return
+    priv mount -vt efivarfs efivarfs "$chrootdir"/sys/firmware/efi/efivars &>>"$log" || return
   fi
   sync
   # Enter the chroot.
-  chroot "$chrootdir" "$@" &>>"$log"
+  priv chroot "$chrootdir" "$@" &>>"$log"
   local chrootstatus=$?
   # Unmount virtual filesystems.
   sync
   if test $efimode -eq 1; then
-    umount -Rv "$chrootdir"/sys/firmware/efi/efivars &>>"$log" || return
+    priv umount -Rv "$chrootdir"/sys/firmware/efi/efivars &>>"$log" || return
   fi
-  umount -Rv "$chrootdir"/dev/pts &>>"$log" || return
-  umount -Rv "$chrootdir"/dev/shm &>>"$log" || return
-  umount -Rv "$chrootdir"/dev &>>"$log" || return
-  umount -Rv "$chrootdir"/proc &>>"$log" || return
-  umount -Rv "$chrootdir"/sys &>>"$log" || return
-  umount -Rv "$chrootdir"/run &>>"$log" || return
+  priv umount -Rv "$chrootdir"/dev/pts &>>"$log" || return
+  priv umount -Rv "$chrootdir"/dev/shm &>>"$log" || return
+  priv umount -Rv "$chrootdir"/dev &>>"$log" || return
+  priv umount -Rv "$chrootdir"/proc &>>"$log" || return
+  priv umount -Rv "$chrootdir"/sys &>>"$log" || return
+  priv umount -Rv "$chrootdir"/run &>>"$log" || return
   sync
   # Report the result and return.
   if test $chrootstatus -eq 0; then
@@ -413,7 +423,7 @@ stage_mainmenu() {
   "Exit" "Exit this installation program.")"
   case "${choice%%|*}" in
     "Install") stage_inc ;;
-    "About") yad_message "About" "This is osinstallgui version $ver, running on $osname, accessing data from @@CONFPATH@@, and working out of $workdir.\n\nosinstallgui is an extremely fast and minimal GUI installer for GNU/Linux operating systems.\n\nosinstallgui was created by Daniel Massey and is licensed under the GNU GPLv3+. Visit go.dmassey.net/oig for more info." ;;
+    "About") yad_message "About" "This is osinstallgui version $ver, running on $osname, accessing data from @@CONFPATH@@, working out of $workdir, and running as $(whoami) ($EUID).\n\nosinstallgui is an extremely fast and minimal GUI installer for GNU/Linux operating systems.\n\nosinstallgui was created by Daniel Massey and is licensed under the GNU GPLv3+. Visit go.dmassey.net/oig for more info." ;;
     "Restart") shutdown -r now ;;
     "Shutdown") shutdown -h now ;;
     "Exit"|"") exit 0 ;;
@@ -538,7 +548,7 @@ stage_rootpw() {
   if test "$OSINSTALLGUI_ROOTPW" = "1"; then
     # Ask the user for the root password. Again SC2155 applies here.
     local rootpw1
-    rootpw1="$(yad_password "Root Password" "Please enter a new password for the system's root account. Leave the field empty to disable the root account (users willl still be able elevate using 'sudo').")"
+    rootpw1="$(yad_password "Root Password" "Please enter a new password for the system's root account. Leave the field empty to disable the root account (users will still be able elevate using 'sudo').")"
     # Go back to the previous stage if the user backed out.
     if test $? -ne 0; then
       stage_dec
@@ -653,7 +663,7 @@ stage_hostname() {
   # We will also strip out non-alphanumeric/non-space/non-dash characters.
   # And then we will replace all spaces with dashes.
   # This is to be compliant with the hostname requirements.
-  local defaulthostname="$tgtusername-$({ dmidecode -s system-product-name 2>/dev/null || echo "PC"; } | tr -cd '[:alnum:] [:space:] -' | sed 's/ \+/-/g')"
+  local defaulthostname="$tgtusername-$({ priv dmidecode -s system-product-name 2>/dev/null || echo "PC"; } | tr -cd '[:alnum:] [:space:] -' | sed 's/ \+/-/g')"
   # Collect the input using the default hostname as the default/placeholder.
   local hostname
   hostname="$(yad_input "Hostname" "Please enter your desired hostname which will identify this computer to the network." "$defaulthostname")"
@@ -738,8 +748,8 @@ stage_diskpar() {
         if yad_prompt "Warning" "The selected disk appears to have mounted partitions. In order to use it for the installation, all partitions must first be unmounted. Do you want this program to try and unmount them for you?"; then
           # Try to unmount each partition. Sort was done because we can't use -R.
           for part in $mountedparts; do
-            sync; umount "$part" &>>/dev/null
-            sync; swapoff "$part" &>>/dev/null
+            sync; priv umount "$part" &>>/dev/null
+            sync; priv swapoff "$part" &>>/dev/null
           done
           # Check if there are still mounted partitions.
           if mount | grep -q "$diskselection"; then
@@ -792,10 +802,10 @@ stage_diskpar() {
       yad_prompt "Erase Disk" "WARNING! Any existing data on the disk $diskselection is now going to be PERMANENTLY DELETED. This action is IRREVERSIBLE. Are you sure you want to continue?" || return
       # Wipe filesystems, overwrite MBR (if any), and erase GPT (if any).
       write_log "Erasing the disk $diskselection."
-      sync; wipefs -af "$diskselection" &>>"$log"
-      sync; dd if=/dev/zero of="$diskselection" bs=1M count=10 &>>"$log"
-      sync; sgdisk -Z "$diskselection" &>>"$log"
-      sync; partprobe &>>"$log"
+      sync; priv wipefs -af "$diskselection" &>>"$log"
+      sync; priv dd if=/dev/zero of="$diskselection" bs=1M count=10 &>>"$log"
+      sync; priv sgdisk -Z "$diskselection" &>>"$log"
+      sync; priv partprobe &>>"$log"
       write_log "Finished erasing the disk $diskselection."
       # Decide which partitions to make depending on boot mode.
       if test $fullyportable -eq 1; then
@@ -825,7 +835,7 @@ stage_diskpar() {
       fi
       # Partition the disk.
       write_log "Partitioning the disk $diskselection using fdisk."
-      echo -e "$operations" | fdisk "$diskselection" &>>"$log"
+      echo -e "$operations" | priv fdisk "$diskselection" &>>"$log"
       if test $? -ne 0; then
         # OH NO! It failed, this could be bad.
         write_log "Failed to partition the disk $diskselection using fdisk."
@@ -905,9 +915,10 @@ stage_diskpar() {
         # Go through each of these partitions and add them to the top entry.
         for part in "${individualdiskparts[@]}"; do
           # Get partition details.
+          # TODO: Move away from blkid (to avoid needing to elevate).
           local partsize="$(lsblk -lnp "$part" | xargs | cut -d' ' -f4)"
-          local partfs="$(blkid -o value -s TYPE "$part")"
-          local partlabel="$(blkid -o value -s LABEL "$part")"
+          local partfs="$(priv blkid -o value -s TYPE "$part")"
+          local partlabel="$(priv blkid -o value -s LABEL "$part")"
           # Unknown filesystem would be blank by default.
           if test -z "$partfs"; then
             partfs="unknown"
@@ -964,7 +975,7 @@ stage_diskpar() {
         fi
         # If the selected partition is not vfat, then we need to format it.
         local efiformat=0
-        if test "$(blkid -o value -s TYPE "$efiparselection")" != "vfat"; then
+        if test "$(priv blkid -o value -s TYPE "$efiparselection")" != "vfat"; then
           if yad_prompt "Partition Setup" "The selected EFI system partition $efiparselection is not formatted as vfat (FAT32). It will therefore be formatted by this program, and any existing data on it will be deleted. Is this OK?"; then
             # Mark that we need to format this.
             efiformat=1
@@ -1082,6 +1093,7 @@ stage_diskpar() {
       if which gparted &>/dev/null; then
         yad_message "Manual Partitioning" "The GParted graphical partitioning program will be launched. Once you have finished partitioning with this program, close the program, then the installation process will continue."
         write_log "Launching GParted as an external program."
+        # GParted should automatically request elevation by itself.
         gparted &>>"$log"
         write_log "Execution of GParted as an external program finished."
         return
@@ -1153,18 +1165,18 @@ stage_format() {
       local cryptargs="--pbkdf pbkdf2 --pbkdf-force-iterations 2000000"
     fi
     write_log "Formatting $tgtroot for LUKS encryption ($cryptargs)."
-    echo -n "$tgtlukspw" | cryptsetup luksFormat "$tgtroot" --type luks2 $cryptargs - &>>"$log"
+    echo -n "$tgtlukspw" | priv cryptsetup luksFormat "$tgtroot" --type luks2 $cryptargs - &>>"$log"
     if test $? -ne 0; then
       write_log "Failed to format $tgtroot for LUKS encryption."
       yad_message "Error" "Failed to format the root filesystem $tgtroot for LUKS encryption. A log file can be found at $log."
       stage_dec; stage_dec
       return
     fi
-    echo -n "$tgtlukspw" | cryptsetup open "$tgtroot" "$OSINSTALLGUI_LUKS_MAPPER_NAME" - &>>"$log"
+    echo -n "$tgtlukspw" | priv cryptsetup open "$tgtroot" "$OSINSTALLGUI_LUKS_MAPPER_NAME" - &>>"$log"
     if test $? -ne 0; then
       yad_message "Error" "Failed to open the newly created LUKS-encrypted filesystem. A log file can be found at $log."
       # Forcibly close the cryptsetup device just in case something weird happened.
-      cryptsetup close "$OSINSTALLGUI_LUKS_MAPPER_NAME" &>>/dev/null
+      priv cryptsetup close "$OSINSTALLGUI_LUKS_MAPPER_NAME" &>>/dev/null
       stage_dec; stage_dec
       return
     fi
@@ -1250,23 +1262,23 @@ stage_swapsetup() {
   fi
   # A different setup is needed depending on which filesystem we are using.
   write_log "Trying to create and activate a $tgtswap swapfile."
-  if test "$(blkid -o value -s TYPE "$tgtroot")" = "btrfs"; then
+  if test "$(priv blkid -o value -s TYPE "$tgtroot")" = "btrfs"; then
     # The btrfs program provides a command which does all the needed setup.
-    btrfs -v filesystem mkswapfile --size "$tgtswap" "$tgtpath"/swapfile &>>"$log"
+    priv btrfs -v filesystem mkswapfile --size "$tgtswap" "$tgtpath"/swapfile &>>"$log"
   else
     # We need to manually create it for ext4.
     {
       # Sync between every operation for robustness.
-      sync; fallocate -vl "$tgtswap" "$tgtpath"/swapfile
-      sync; chmod -v 0600 "$tgtpath"/swapfile
-      sync; mkswap "$tgtpath"/swapfile
+      sync; priv fallocate -vl "$tgtswap" "$tgtpath"/swapfile
+      sync; priv chmod -v 0600 "$tgtpath"/swapfile
+      sync; priv mkswap "$tgtpath"/swapfile
     } &>>"$log"
   fi
   # Try to activate the newly created swapfile.
   sync
-  if ! swapon "$tgtpath"/swapfile &>>"$log"; then
+  if ! priv swapon "$tgtpath"/swapfile &>>"$log"; then
     # Unable to create and activate the swap file, remove if it needed.
-    rm -fv "$tgtpath"/swapfile &>>"$log"
+    priv rm -fv "$tgtpath"/swapfile &>>"$log"
     # Display the message.
     write_log "Failed to create and activate a $tgtswap swapfile."
     yad_message "Warning" "The $tgtswap swapfile could not be created and activated. The installation will continue without swap space. A log file can be found at $log."
@@ -1293,7 +1305,7 @@ stage_installation() {
     # Unsquash the image.
     write_log "Unsquashing $OSINSTALLGUI_ROOTFS to $tgtpath."
     # Unsquash with percentage and pipe to yad for progress bar.
-    unsquashfs -f -q -percentage -d "$tgtpath" "$OSINSTALLGUI_ROOTFS" 2>>"$log" | yad_progress "Installation" "The installation of $osname is in progress. Please be patient while the system is being installed."
+    priv unsquashfs -f -q -percentage -d "$tgtpath" "$OSINSTALLGUI_ROOTFS" 2>>"$log" | yad_progress "Installation" "The installation of $osname is in progress. Please be patient while the system is being installed."
     if test $? -ne 0; then
       write_log "Failed to unsquash $OSINSTALLGUI_ROOTFS to $tgtpath."
       yad_message "Error" "The installation process did not complete successfully (unsquashfs operation failed). A log file can be found at $log."
@@ -1306,7 +1318,7 @@ stage_installation() {
     # Untar the image.
     write_log "Untarring $OSINSTALLGUI_ROOTFS to $tgtpath."
     # TODO: Make a percentage progress bar for tar, not just squashfs.
-    tar -xpf "$OSINSTALLGUI_ROOTFS" -C "$tgtpath" &>>"$log"
+    priv tar -xpf "$OSINSTALLGUI_ROOTFS" -C "$tgtpath" &>>"$log"
     if test $? -ne 0; then
       write_log "Failed to untar $OSINSTALLGUI_ROOTFS to $tgtpath."
       yad_message "Error" "The installation process did not complete successfully (tar operation failed). A log file can be found at $log."
@@ -1318,7 +1330,7 @@ stage_installation() {
   fi
   # Set permissions of root directory to 755 manually after extraction.
   # This avoids world-writable '/' if rootfs lacks root directory metadata.
-  chmod 0755 "$tgtpath" &>/dev/null
+  priv chmod 0755 "$tgtpath" &>/dev/null
   # Now move to the post installation stage.
   sync
   stage_inc
@@ -1365,33 +1377,33 @@ stage_systemconfig() {
       echo "# The raw root device is set up in /etc/crypttab."
     fi
     # Root filesystem fstab entry.
-    echo "UUID=$(blkid -o value -s UUID "$tgtroot") / $tgtfs defaults 1 1"
+    echo "UUID=$(priv blkid -o value -s UUID "$tgtroot") / $tgtfs defaults 1 1"
     # Boot partition fstab entry.
     if test ! -z "$tgtboot"; then
-      echo "UUID=$(blkid -o value -s UUID "$tgtboot") /boot $tgtfs defaults 1 2"
+      echo "UUID=$(priv blkid -o value -s UUID "$tgtboot") /boot $tgtfs defaults 1 2"
     fi
     # EFI system partition fstab entry.
     if test ! -z "$tgtefi"; then
-      echo "UUID=$(blkid -o value -s UUID "$tgtefi") /boot/efi vfat umask=0077 0 2"
+      echo "UUID=$(priv blkid -o value -s UUID "$tgtefi") /boot/efi vfat umask=0077 0 2"
     fi
     # Swapfile fstab entry.
     if test ! -z "$tgtswap"; then
       echo "/swapfile none swap sw 0 0"
     fi
-  } > "$tgtpath"/etc/fstab
+  } | priv tee "$tgtpath"/etc/fstab >/dev/null
   if test $tgtluks -eq 1; then
     {
       echo "# This /etc/crypttab was automatically generated by osinstallgui."
       echo "# This is because the installation was configured to use LUKS."
       echo "# Do not modify it, as it could prevent the system from booting."
       # Cryptroot entry.
-      echo "$OSINSTALLGUI_LUKS_MAPPER_NAME UUID=$(blkid -o value -s UUID "$tgtluksraw") none luks"
-    } > "$tgtpath"/etc/crypttab
+      echo "$OSINSTALLGUI_LUKS_MAPPER_NAME UUID=$(priv blkid -o value -s UUID "$tgtluksraw") none luks"
+    } | priv tee "$tgtpath"/etc/crypttab >/dev/null
   fi
   write_log "Finished generation of /etc/fstab for the target system."
   echo "14" >&"${systemconfigprogress[1]}"
   # Prepare the locale for generation by uncommenting the line in the file.
-  sed -i "s/#$tgtlocale/$tgtlocale/" "$tgtpath/$OSINSTALLGUI_LOCALES_FILE"
+  priv sed -i "s/#$tgtlocale/$tgtlocale/" "$tgtpath/$OSINSTALLGUI_LOCALES_FILE"
   # Generate the locales using a chroot environment.
   write_log "Generating locales in chroot using $OSINSTALLGUI_LOCALES_CMD."
   if ! helper_chroot_advanced "$tgtpath" "$OSINSTALLGUI_LOCALES_CMD"; then
@@ -1402,9 +1414,9 @@ stage_systemconfig() {
     write_log "$OSINSTALLGUI_LOCALES_CMD successfully generated locales."
   fi
   # Set up the locale configuration file.
-  echo "LANG=$tgtlocale" > "$tgtpath"/etc/locale.conf
+  echo "LANG=$tgtlocale" | priv tee "$tgtpath"/etc/locale.conf >/dev/null
   # Set up the keymap configuration file.
-  echo "KEYMAP=$tgtkeymap" > "$tgtpath"/etc/vconsole.conf
+  echo "KEYMAP=$tgtkeymap" | priv tee "$tgtpath"/etc/vconsole.conf >/dev/null
   # Set up the X11 keymap configuration file.
   local layoutx11 variantx11
   if echo "$tgtx11key" | grep -q _; then
@@ -1415,7 +1427,7 @@ stage_systemconfig() {
     # Layout only.
     layoutx11="$tgtx11key"
   fi
-  install -dm755 "$tgtpath"/etc/X11/xorg.conf.d
+  priv install -dm755 "$tgtpath"/etc/X11/xorg.conf.d
   {
     echo "# This file was automatically generated by osinstallgui."
     echo "# It sets the default X11 keymap, chosen when this OS was installed."
@@ -1428,11 +1440,11 @@ stage_systemconfig() {
     echo "    Option \"XkbModel\" \"pc105\""
     echo "    Option \"XkbOptions\" \"\""
     echo "EndSection"
-  } > "$tgtpath"/etc/X11/xorg.conf.d/00-keyboard.conf
+  } | priv tee "$tgtpath"/etc/X11/xorg.conf.d/00-keyboard.conf >/dev/null
   echo "28" >&"${systemconfigprogress[1]}"
   # Set up the timezone.
   write_log "Setting timezone of target system to $tgttimezone."
-  ln -sfv /usr/share/zoneinfo/"$tgttimezone" "$tgtpath"/etc/localtime  &>>"$log"
+  priv ln -sfv /usr/share/zoneinfo/"$tgttimezone" "$tgtpath"/etc/localtime  &>>"$log"
   write_log "Timezone of target system successfully set to $tgttimezone."
   # Update the hardware clock.
   # TODO: Allow localtime instead of UTC, for some distros which prefer that.
@@ -1448,7 +1460,7 @@ stage_systemconfig() {
   # Set up the root password, if a root password was specified.
   if test ! -z "$tgtrootpw"; then
     write_log "Setting the root password using chpasswd."
-    if ! echo "root:$tgtrootpw" | chpasswd -R "$tgtpath" -c YESCRYPT &>>"$log"; then
+    if ! echo "root:$tgtrootpw" | priv chpasswd -R "$tgtpath" -c YESCRYPT &>>"$log"; then
       # Warn about it being unsuccessful.
       write_log "Failed to set the root password."
       yad_message "Error" "The root password could not be set on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
@@ -1461,7 +1473,7 @@ stage_systemconfig() {
   if test ! -z "$tgtfullname"; then
     # Fullname is set.
     write_log "Creating account for $tgtusername ($tgtfullname) using useradd."
-    if ! useradd -R "$tgtpath" -c "$tgtfullname" -G "$OSINSTALLGUI_ADMIN_GROUP" -ms "$OSINSTALLGUI_USER_SHELL" "$tgtusername" &>>"$log"; then
+    if ! priv useradd -R "$tgtpath" -c "$tgtfullname" -G "$OSINSTALLGUI_ADMIN_GROUP" -ms "$OSINSTALLGUI_USER_SHELL" "$tgtusername" &>>"$log"; then
       # Warn about it being unsuccessful.
       write_log "Failed to create account for $tgtusername ($tgtfullname)."
       yad_message "Error" "The primary user account '$tgtusername' ($tgtfullname) could not be created on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
@@ -1471,7 +1483,7 @@ stage_systemconfig() {
   else
     # No fullname is set.
     write_log "Creating account for $tgtusername using useradd."
-    if ! useradd -R "$tgtpath" -G "$OSINSTALLGUI_ADMIN_GROUP" -ms "$OSINSTALLGUI_USER_SHELL" "$tgtusername" &>>"$log"; then
+    if ! priv useradd -R "$tgtpath" -G "$OSINSTALLGUI_ADMIN_GROUP" -ms "$OSINSTALLGUI_USER_SHELL" "$tgtusername" &>>"$log"; then
       # Warn about it being unsuccessful.
       write_log "Failed to create account for $tgtusername."
       yad_message "Error" "The primary user account '$tgtusername' could not be created on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
@@ -1482,7 +1494,7 @@ stage_systemconfig() {
   echo "71" >&"${systemconfigprogress[1]}"
   # Set the password for the user account.
   write_log "Setting password for $tgtusername using chpasswd."
-  if ! echo "$tgtusername:$tgtuserpw" | chpasswd -R "$tgtpath" -c YESCRYPT &>>"$log"; then
+  if ! echo "$tgtusername:$tgtuserpw" | priv chpasswd -R "$tgtpath" -c YESCRYPT &>>"$log"; then
     # Warn about it being unsuccessful.
     write_log "Failed to set password for $tgtusername."
     yad_message "Error" "The password for '$tgtusername' could not be set on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
@@ -1494,7 +1506,7 @@ stage_systemconfig() {
   write_log "Setting the system hostname to $tgthostname."
   # Need to set in both /etc/hostname and /etc/hosts.
   # For the latter, we match the line beginning with 127.0.1.1 and replace it.
-  if ! { echo "$tgthostname" > "$tgtpath"/etc/hostname && sed -i "s/^127\.0\.1\.1 .*/127.0.1.1 $tgthostname/" "$tgtpath"/etc/hosts; }; then
+  if ! { echo "$tgthostname" | priv tee "$tgtpath"/etc/hostname >/dev/null && priv sed -i "s/^127\.0\.1\.1 .*/127.0.1.1 $tgthostname/" "$tgtpath"/etc/hosts; }; then
     # Warn about it being unsuccessful.
     write_log "Failed to set the system hostname to $tgthostname."
     yad_message "Error" "The hostname for the system could not be set on the target system. The installation process will continue anyway, however this may cause the newly installed system to be tainted. A log file can be found at $log."
@@ -1570,7 +1582,7 @@ stage_bootloader() {
         echo "GRUB_TIMEOUT_STYLE=\"hidden\""
         echo "GRUB_SAVEDEFAULT=\"false\""
         echo "GRUB_DISABLE_OS_PROBER=\"true\""
-      } >> "$tgtpath"/etc/default/grub
+      } | priv tee -a "$tgtpath"/etc/default/grub >/dev/null
     fi
     # GRUB configuration step.
     write_log "Trying to configure the GRUB bootloader with grub-mkconfig..."
@@ -1601,19 +1613,19 @@ stage_finish() {
   # Deactivate the swapfile, if needed.
   if test -e "$tgtpath"/swapfile && swapon --show=NAME | grep -q "^$tgtpath/swapfile$"; then
     write_log "Trying to deactivate the swapfile."
-    swapoff "$tgtpath"/swapfile &>>"$log"
+    priv swapoff "$tgtpath"/swapfile &>>"$log"
     write_log "Finished deactivating the swapfile (hopefully)."
   fi
   # Unmount all filesystems and close the LUKS mapper if needed.
   write_log "Unmounting all filesystems..."
   helper_umount "$tgtpath"
   if test $tgtluks -eq 1; then
-    cryptsetup close "$OSINSTALLGUI_LUKS_MAPPER_NAME" &>>"$log"
+    priv cryptsetup close "$OSINSTALLGUI_LUKS_MAPPER_NAME" &>>"$log"
   fi
   write_log "Finished unmounting all filesystems (hopefully)."
   # Show finishing message.
   if yad_prompt "Installation" "The installation of $osname has finished. Select 'YES' to shut down your system now, so you can restart into the new installation. Select 'NO' if, instead, you'd like to continue testing the live environment. In any case, remember to remove the installation media, to ensure you boot into the new installation as opposed to the live environment."; then
-    shutdown -h now
+    priv shutdown -h now
   fi
   # Exit the thing (stage will be less than 0 so the main loop will stop).
   export stage=-1
@@ -1636,11 +1648,6 @@ touch "$log"
 # Ensure we are running under the minimum supported Bash version.
 if test -z "$BASH_VERSINFO" || test "${BASH_VERSINFO[0]}" -lt 4; then
   die "$inv requires Bash 4.0+ in order to run (you are using $BASH_VERSION)."
-fi
-
-# Ensure we are running as root.
-if test $EUID -ne 0; then
-  die "$inv must be run as root (use 'sudo')."
 fi
 
 # Ensure the global config file exists, and source it if it does.
@@ -1694,6 +1701,7 @@ if test ! -e "@@CONFPATH@@"/data/keymaps.desc; then
 fi
 
 # Check dependencies - ordered by importance and when they are used.
+write_log "Checking presence of required dependencies..."
 check_dep yad
 check_dep xkbcli libxkbcommon
 check_dep yq
@@ -1704,6 +1712,13 @@ check_dep mkfs.ext4 e2fsprogs
 check_dep mkfs.fat dosfstools
 check_dep unsquashfs squashfs-tools
 
+# If we are running unprivileged, pkexec from polkit is a hard dependency.
+if test $EUID -ne 0; then
+  write_log "Running unprivileged. Checking pkexec (polkit) dependency..."
+  check_dep pkexec polkit
+fi
+write_log "All dependency checks succeeded."
+
 # Disk and partition variables need to be accessed by the whole program.
 export tgtdisk="" tgtroot="" tgtfs="" tgtefi="" tgtefiformat=0 tgtboot="" tgtfullport=0 tgtswap="" tgtsplitboot=0 tgtluks=0 tgtlukspw="" tgtluksraw=""
 
@@ -1711,8 +1726,9 @@ export tgtdisk="" tgtroot="" tgtfs="" tgtefi="" tgtefiformat=0 tgtboot="" tgtful
 export tgtlocale="" tgtkeymap="" tgtx11key="" tgttimezone="" tgtrootpw="" tgtusername="" tgtfullname="" tgtuserpw="" tgthostname=""
 
 # Set up the mount directory for the target system.
+# This directory must be owned by root to avoid permission issues post-install.
 export tgtpath="$workdir/target"
-mkdir -p "$tgtpath"
+priv mkdir -p "$tgtpath"
 
 # Determine whether our host is booted in Legacy BIOS or UEFI mode.
 if test -e /sys/firmware/efi/systab; then

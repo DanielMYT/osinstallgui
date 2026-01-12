@@ -100,6 +100,9 @@ yad_password() {
   echo "$response"
   return $status
 }
+yad_progress() {
+  yad --progress --title="$1 ⎯ $inv" --text="$2" --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100
+}
 
 # Helper functions.
 helper_sortentries() {
@@ -171,7 +174,7 @@ helper_format() {
   write_log "Trying to format $1 as $2."
   case "$2" in
     ext4) mkfs.ext4 -vFL "$3" "$1" &>>"$log" ;;
-    btrfs) mkfs.btrfs -vfL "$3" "$1"&>>"$log" ;;
+    btrfs) mkfs.btrfs -vfL "$3" "$1" &>>"$log" ;;
     swap) mkswap "$1" &>>"$log" ;;
     vfat) mkfs.fat -F32 -vn "$3" "$1" &>>"$log" ;;
   esac
@@ -274,7 +277,7 @@ preloader() {
   # Unfortunately, the previous pipe method would cause variables to be lost.
   # This new method involves using coproc, to avoid any piping or subshells.
   # TODO: Make this the default elsewhere too.
-  coproc preloaderprogress { yad --progress --title="Loading... ⎯ $inv" --text="The installer is loading, please be patient." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100; }
+  coproc preloaderprogress { yad_progress "Loading..." "The installer is loading, please be patient."; }
   # Set up the list of locales, as well as the list of the most common ones.
   write_log "Preloading locales."
   # Arrays to store the stuff into (u is for unsorted, will be sorted later).
@@ -1136,7 +1139,7 @@ stage_format() {
   # Sync again first, just in case.
   sync
   # Use coproc, so we can have a progress bar, as format of LUKS takes a while.
-  coproc formatprogress { yad --progress --title="Loading... ⎯ $inv" --text="The partitions are being formatted, please be patient." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100; }
+  coproc formatprogress { yad_progress "Loading..." "The partitions are being formatted, please be patient."; }
   # Deal with LUKS encryption support using cryptsetup.
   if test $tgtluks -eq 1; then
     # Format to LUKS and open as a mapper device (/dev/mapper/<name>).
@@ -1290,7 +1293,7 @@ stage_installation() {
     # Unsquash the image.
     write_log "Unsquashing $OSINSTALLGUI_ROOTFS to $tgtpath."
     # Unsquash with percentage and pipe to yad for progress bar.
-    unsquashfs -f -q -percentage -d "$tgtpath" "$OSINSTALLGUI_ROOTFS" 2>>"$log" | yad --progress --title="Installation ⎯ $inv" --text="The installation of $osname is in progress. Please be patient while the system is being installed." --percentage=0 --auto-close --no-buttons --no-escape --width=600 --height=100
+    unsquashfs -f -q -percentage -d "$tgtpath" "$OSINSTALLGUI_ROOTFS" 2>>"$log" | yad_progress "Installation" "The installation of $osname is in progress. Please be patient while the system is being installed."
     if test $? -ne 0; then
       write_log "Failed to unsquash $OSINSTALLGUI_ROOTFS to $tgtpath."
       yad_message "Error" "The installation process did not complete successfully (unsquashfs operation failed). A log file can be found at $log."
@@ -1349,7 +1352,7 @@ stage_postinstall() {
 stage_systemconfig() {
   # This stage is for configuring the system after the installation.
   # Set up a progress bar using coproc, which we will update ourselves.
-  coproc systemconfigprogress { yad --progress --title="Installation ⎯ $inv" --text="Configuring the system, please be patient." --percentage=0 --auto-close --auto-kill --no-buttons --no-escape --width=600 --height=100; }
+  coproc systemconfigprogress { yad_progress "Installation" "Configuring the system, please be patient."; }
   # Generate the fstab file (and crypttab file, if needed).
   write_log "Generating /etc/fstab for the target system."
   # Do all echos in a block and only write at the end, as required by SC2129.
@@ -1514,7 +1517,7 @@ stage_initramfs() {
     echo "$?" > "$workdir"/.status_initramfs
     # Tell yad that it is now at 100%, to finish the dialog.
     echo "100"
-  } | yad --progress --title="Installation ⎯ $inv" --text="Generating an initramfs for the target system, please wait (progress will display 0% until complete)." --percentage=0 --auto-close --no-buttons --no-escape --width=600 --height=100
+  } | yad_progress "Installation" "Generating an initramfs for the target system, please wait (progress will display 0% until complete)."
   if test "$(cat "$workdir"/.status_initramfs 2>&1)" != "0"; then
     # OH NO! Something went horribly wrong. Report the error.
     write_log "Failed to generate an initramfs for the target system."
@@ -1575,7 +1578,7 @@ stage_bootloader() {
     echo "$?" > "$workdir"/.sgb
     # Now tell yad that we are done.
     echo "100"
-  } | yad --progress --title="Installation ⎯ $inv" --text="Installing the GRUB bootloader, please be patient." --percentage=0 --auto-close --no-buttons --no-escape --width=600 --height=100
+  } | yad_progress "Installation" "Installing the GRUB bootloader, please be patient."
   # Check if anything went wrong during the process.
   local grubfailure=0
   for s in a1 a2 a3 b; do

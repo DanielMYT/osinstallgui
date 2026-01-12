@@ -67,7 +67,7 @@ package, but particularly its command-line utilities.
   you can set `OSINSTALLGUI_ALLOW_LUKS` to `0` in osinstallgui's configuration
   file to forcibly disable it). Please note that the GRUB bootloader may need
   modifications to be able to properly support booting from a LUKS encrypted
-  partition - see the FAQ document for detailsd.
+  partition - see the FAQ document for details.
 - **dmidecode**, to allow the system model to be determined, for the default
   hostname (if not present, "PC" will be used as a fallback, but the user can,
   of course, still customise the hostname themselves and override the default).

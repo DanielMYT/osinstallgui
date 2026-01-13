@@ -800,12 +800,18 @@ stage_diskpar() {
       fi
       # Final warning before fully erasing the disk.
       yad_prompt "Erase Disk" "WARNING! Any existing data on the disk $diskselection is now going to be PERMANENTLY DELETED. This action is IRREVERSIBLE. Are you sure you want to continue?" || return
+      # Start a progress bar for disk erasure process.
+      coproc eraseprogress { yad_progress "Erase Disk" "The disk $diskselection is being erased and partitioned, please be patient."; }
       # Wipe filesystems, overwrite MBR (if any), and erase GPT (if any).
       write_log "Erasing the disk $diskselection."
       sync; priv wipefs -af "$diskselection" &>>"$log"
+      echo "20" >&"${eraseprogress[1]}"
       sync; priv dd if=/dev/zero of="$diskselection" bs=1M count=10 &>>"$log"
+      echo "40" >&"${eraseprogress[1]}"
       sync; priv sgdisk -Z "$diskselection" &>>"$log"
+      echo "60" >&"${eraseprogress[1]}"
       sync; priv partprobe &>>"$log"
+      echo "80" >&"${eraseprogress[1]}"
       write_log "Finished erasing the disk $diskselection."
       # Decide which partitions to make depending on boot mode.
       if test $fullyportable -eq 1; then
@@ -842,6 +848,8 @@ stage_diskpar() {
         yad_message "Error" "Failed to partition the disk $diskselection (fdisk returned an unsuccessful exit code). A log file can be found at $log."
         return
       fi
+      # Finish the progress bar and close the coproc.
+      echo "100" >&"${eraseprogress[1]}"
       # Get a list of all the partitions which were just created.
       local createdparts=()
       readarray -t createdparts < <(lsblk -lnp "$diskselection" | grep part | cut -d' ' -f1)
@@ -1347,6 +1355,8 @@ stage_postinstall() {
       stage_inc
       return
     fi
+    # Simple faked progress bar for this section in case the script takes time.
+    coproc postinstallprogress { yad_progress "Installation" "Running the included post-installation script, please be patient."; }
     # Run the script.
     write_log "Running the rootfs cleanup script $OSINSTALLGUI_CLEANUP_CMD."
     # Try to run the script.
@@ -1357,6 +1367,8 @@ stage_postinstall() {
     else
       write_log "Successfully ran the rootfs cleanup script $OSINSTALLGUI_CLEANUP_CMD."
     fi
+    # Finish the fake progress bar.
+    echo "100" >&"${postinstallprogress[1]}"
   fi
   # Go to the next stage, which will be the full system configuration.
   stage_inc
@@ -1610,12 +1622,15 @@ stage_bootloader() {
   stage_inc
 }
 stage_finish() {
+  # Progress bar for this stage, in case it takes a while.
+  coproc finishprogress { yad_progress "Installation" "Finishing the installation, please be patient."; }
   # Deactivate the swapfile, if needed.
   if test -e "$tgtpath"/swapfile && swapon --show=NAME | grep -q "^$tgtpath/swapfile$"; then
     write_log "Trying to deactivate the swapfile."
     priv swapoff "$tgtpath"/swapfile &>>"$log"
     write_log "Finished deactivating the swapfile (hopefully)."
   fi
+  echo "50" >&"${finishprogress[1]}"
   # Unmount all filesystems and close the LUKS mapper if needed.
   write_log "Unmounting all filesystems..."
   helper_umount "$tgtpath"
@@ -1623,6 +1638,7 @@ stage_finish() {
     priv cryptsetup close "$OSINSTALLGUI_LUKS_MAPPER_NAME" &>>"$log"
   fi
   write_log "Finished unmounting all filesystems (hopefully)."
+  echo "100" >&"${finishprogress[1]}"
   # Show finishing message.
   if yad_prompt "Installation" "The installation of $osname has finished. Select 'YES' to shut down your system now, so you can restart into the new installation. Select 'NO' if, instead, you'd like to continue testing the live environment. In any case, remember to remove the installation media, to ensure you boot into the new installation as opposed to the live environment."; then
     priv shutdown -h now

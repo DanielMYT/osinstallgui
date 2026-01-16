@@ -1066,29 +1066,35 @@ stage_diskpar() {
       # Final warning before we format.
       local formatinfo=""
       # Whether or not EFI partition needs formatting.
-      if test $efimode -eq 1 && test $efiformat -eq 1; then
-        formatinfo+="\n- $efiparselection ($(lsblk -lnp "$efiparselection" | xargs | cut -d' ' -f4)) as vfat [/boot/efi]"
+      if test $efimode -eq 1; then
+        formatinfo+="\n- "
+        if test $efiformat -eq 1; then
+          formatinfo+="Format"
+        else
+          formatinfo+="Use existing"
+        fi
+        formatinfo+=" $efiparselection ($(lsblk -lnp "$efiparselection" | xargs | cut -d' ' -f4)) as vfat [/boot/efi]"
       fi
       # Whether or not the root partition will be formatted as btrfs or ext4.
       if test $btrfsuse -eq 1; then
-        formatinfo+="\n- $rootparselection ($(lsblk -lnp "$rootparselection" | xargs | cut -d' ' -f4)) as btrfs [/]"
+        formatinfo+="\n- Format $rootparselection ($(lsblk -lnp "$rootparselection" | xargs | cut -d' ' -f4)) as btrfs [/]"
       else
-        formatinfo+="\n- $rootparselection ($(lsblk -lnp "$rootparselection" | xargs | cut -d' ' -f4)) as ext4 [/]"
+        formatinfo+="\n- Format $rootparselection ($(lsblk -lnp "$rootparselection" | xargs | cut -d' ' -f4)) as ext4 [/]"
       fi
       # Whether or not there is a separate boot partition.
       if test $splitbootuse -eq 1; then
         if test $btrfsuse -eq 1; then
-          formatinfo+="\n- $bootparselection ($(lsblk -lnp "$bootparselection" | xargs | cut -d' ' -f4)) as btrfs [/boot]"
+          formatinfo+="\n- Format $bootparselection ($(lsblk -lnp "$bootparselection" | xargs | cut -d' ' -f4)) as btrfs [/boot]"
         else
-          formatinfo+="\n- $bootparselection ($(lsblk -lnp "$bootparselection" | xargs | cut -d' ' -f4)) as ext4 [/boot]"
+          formatinfo+="\n- Format $bootparselection ($(lsblk -lnp "$bootparselection" | xargs | cut -d' ' -f4)) as ext4 [/boot]"
         fi
       fi
       # Whether or not there is a swapfile.
       if test ! -z "$swapsize"; then
-        formatinfo+="\n- $swapsize swap file [/swapfile]"
+        formatinfo+="\n- Create $swapsize swap file [/swapfile]"
       fi
       # Display the message, go back if the user backs out.
-      yad_prompt "Partition Setup" "The following partition(s) are now going to be formatted, and any existing data will be PERMANENTLY DELETED. This action is IRREVERSIBLE. Are you sure you want to proceed?\n$formatinfo" || return
+      yad_prompt "Partition Setup" "The following partition(s) are going to be used. If listed as 'Format', any existing data on that partition will be PERMANENTLY DELETED. Are you sure you want to proceed?\n$formatinfo" || return
       # Save the partition selections for the rest of the installation.
       export tgtroot="$rootparselection" tgtefi="$efiparselection"
       # Save whether or not we are formatting as btrfs or ext4.

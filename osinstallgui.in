@@ -1193,6 +1193,8 @@ stage_format() {
   sync
   # Use coproc, so we can have a progress bar, as format of LUKS takes a while.
   coproc formatprogress { yad_progress "Loading..." "The partitions are being formatted, please be patient."; }
+  # Determine the label for the root filesystem, based on OS name.
+  local rootlabel="$(echo "$osname" | cut -d' ' -f1)"
   # Deal with LUKS encryption support using cryptsetup.
   if test $tgtluks -eq 1; then
     # Format to LUKS and open as a mapper device (/dev/mapper/<name>).
@@ -1206,7 +1208,7 @@ stage_format() {
       local cryptargs="--pbkdf pbkdf2 --pbkdf-force-iterations 2000000"
     fi
     write_log "Formatting $tgtroot for LUKS encryption ($cryptargs)."
-    echo -n "$tgtlukspw" | priv cryptsetup luksFormat "$tgtroot" --type luks2 $cryptargs - &>>"$log"
+    echo -n "$tgtlukspw" | priv cryptsetup luksFormat "$tgtroot" --label "$rootlabel LUKS" --type luks2 $cryptargs - &>>"$log"
     if test $? -ne 0; then
       write_log "Failed to format $tgtroot for LUKS encryption."
       yad_message "Error" "Failed to format the root filesystem $tgtroot for LUKS encryption. A log file can be found at $log."
@@ -1226,8 +1228,6 @@ stage_format() {
     export tgtroot="/dev/mapper/$OSINSTALLGUI_LUKS_MAPPER_NAME"
   fi
   echo "50" >&"${formatprogress[1]}"
-  # Determine the label for the root filesystem, based on OS name.
-  local rootlabel="$(echo "$osname" | cut -d' ' -f1)"
   # Try to format the partitions. Step back a stage if any format fails.
   # Note that BIOS boot (fullyportable) doesn't need to be formatted at all.
   if test "$tgtfs" = "btrfs"; then

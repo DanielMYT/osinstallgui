@@ -612,6 +612,13 @@ stage_usersetup() {
     yad_message "Error" "The username field must not be left blank."
     return
   fi
+  # Validate the username and start again if it is not valid.
+  # The username cannot already exist as defined in /etc/passwd or /etc/group.
+  # The user must also not be named "linuxbrew" (reserved for Homebrew).
+  if cut -d: -f1 /etc/passwd | grep -Fqx "$username" || cut -d: -f1 /etc/group | grep -Fqx "$username" || test "$username" = "linuxbrew"; then
+    yad_message "Error" "The specified username is reserved by the system and cannot be used."
+    return
+  fi
   # Now set the global values and move on to the user password stage.
   export tgtusername="$username" tgtfullname="$fullname"
   stage_inc

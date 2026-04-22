@@ -1429,10 +1429,10 @@ stage_systemconfig() {
       echo "# The raw root device is set up in /etc/crypttab."
     fi
     # Root filesystem fstab entry.
-    echo "UUID=$(priv blkid -o value -s UUID "$tgtroot") / $tgtfs defaults 1 1"
+    echo "UUID=$(priv blkid -o value -s UUID "$tgtroot") / $tgtfs defaults 0 1"
     # Boot partition fstab entry.
     if test ! -z "$tgtboot"; then
-      echo "UUID=$(priv blkid -o value -s UUID "$tgtboot") /boot $tgtfs defaults 1 2"
+      echo "UUID=$(priv blkid -o value -s UUID "$tgtboot") /boot $tgtfs defaults 0 2"
     fi
     # EFI system partition fstab entry.
     if test ! -z "$tgtefi"; then

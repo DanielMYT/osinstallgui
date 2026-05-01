@@ -1600,8 +1600,8 @@ stage_bootloader() {
   # We also now no longer ask about installation type, since it's done earlier.
   # Fake progress bar, but at least it's a way to inform the user somehow.
   {
-    # Legacy BIOS loader.
-    if test $tgtfullport -eq 1 || test $efimode -eq 0; then
+    # Legacy BIOS loader (only supported on i?86 and x86_64).
+    if { test $tgtfullport -eq 1 || test $efimode -eq 0; } && uname -m | grep -qE '^x86_64$|^i.86$'; then
       write_log "Trying to install the GRUB bootloader for Legacy BIOS..."
       helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=i386-pc "$tgtdisk" $OSINSTALLGUI_GRUB_EXTRA_ARGS_LEGACY
       echo "$?" > "$workdir"/.sga1
@@ -1609,13 +1609,13 @@ stage_bootloader() {
     # UEFI loader (internal mode).
     if test $efimode -eq 1 && test $tgtfullport -eq 0; then
       write_log "Trying to install the GRUB bootloader for UEFI (internal)..."
-      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=x86_64-efi $OSINSTALLGUI_GRUB_EXTRA_ARGS_UEFIIN
+      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target="$efiarch-efi" $OSINSTALLGUI_GRUB_EXTRA_ARGS_UEFIIN
       echo "$?" > "$workdir"/.sga2
     fi
     # UEFI loader (removable mode - for fullyportable or internal fallback).
-    if test $tgtfullport -eq 1 || { test $efimode -eq 1 && test ! -e "$tgtpath"/boot/efi/EFI/BOOT/BOOTX64.EFI; }; then
+    if test $tgtfullport -eq 1 || { test $efimode -eq 1 && test ! -e "$tgtpath"/boot/efi/EFI/BOOT/BOOT"$efiarchid".EFI; }; then
       write_log "Trying to install the GRUB bootloader for UEFI (removable)..."
-      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target=x86_64-efi --removable $OSINSTALLGUI_GRUB_EXTRA_ARGS_UEFIRM
+      helper_chroot_advanced "$tgtpath" /usr/bin/env grub-install --target="$efiarch-efi" --removable $OSINSTALLGUI_GRUB_EXTRA_ARGS_UEFIRM
       echo "$?" > "$workdir"/.sga3
     fi
     # Tell yad that we are half done.
@@ -1787,10 +1787,24 @@ export tgtpath="$workdir/target"
 priv mkdir -p "$tgtpath"
 
 # Determine whether our host is booted in Legacy BIOS or UEFI mode.
+# However UEFI is the only supported boot method on non-x86_64.
 if test -e /sys/firmware/efi/systab; then
   export efimode=1
-else
+  # Specify EFI architecture for grub install (e.g. ARCH-efi).
+  case "$(uname -m)" in
+    i?86) export efiarch="i386" efiarchid="IA32" ;;
+    x86_64) export efiarch="x86_64" efiarchid="X64" ;;
+    aarch64) export efiarch="arm64" efiarchid="AA64" ;;
+    # TODO: Support other UEFI architectures...
+    *) export efiarch="$(uname -m)" efiarchid="$(uname -m)" ;;
+  esac
+elif uname -m | grep -qE '^x86_64$|^i.86$'; then
+  # i?86 and x86_64 systems support the Legacy BIOS boot method.
   export efimode=0
+else
+  # And other potential non-UEFI boot methods are unsupported as of now.
+  write_log "Unknown boot method (not UEFI) and Legacy BIOS is unsupported."
+  die "Unknown boot method (not UEFI) and Legacy BIOS is unsupported."
 fi
 
 # Set the current stage we are on.

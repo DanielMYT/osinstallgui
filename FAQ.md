@@ -86,6 +86,27 @@ is a detailed explanation of why others are required:
   download and use directly as a standalone binary from its
   [GitHub releases page](https://github.com/mikefarah/yq/releases).
 
+## What architectures are supported by osinstallgui?
+Theoretically, any architecture that GNU/Linux runs on should be supported by
+`osinstallgui`. The program itself is written in **Bash**, which is a portable
+interpreted scripting language. The main concern with architecture support
+comes down to boot methods and bootloader naming conventions.
+
+The two traditional boot methods, which are explained in detail in multiple of
+the sections below, are **Legacy BIOS** and **UEFI**. The former is only
+supported on Intel x86 based architectures (those being i386/i486/i586/i686 and
+x86_64). The latter is supported on almost all architectures, but some devices
+which use those architectures do not use UEFI, and instead rely on some
+unintuitive custom (often proprietary) bootloader setup (e.g. Raspberry Pi).
+
+**osinstallgui** therefore supports both **Legacy BIOS** and **UEFI** boot
+methods on supported architectures, and only **UEFI** on other architectures.
+**osinstallgui** currently has no support for custom/proprietary bootloader
+setups which may be required by certain devices running on specific non-x86
+architectures, however, you are more than welcome to
+[send a pull request](https://github.com/DanielMYT/osinstallgui/pulls), if you
+are able to add support for one or more of these custom boot methods.
+
 ## Why do I need to set the keyboard layout twice?
 On GNU/Linux systems, there are two different keyboard layout systems which are
 not directly compatible with each other. As such, **osinstallgui** allows you
@@ -204,6 +225,14 @@ the fully portable mode in newer versions of **osinstallgui** will install the
 UEFI bootloader in removable mode, and will not touch the UEFI variables of the
 system used to create the installation.
 
+**NOTE:** Legacy BIOS is only supported on i386/i486/i586/i686 and x86_64.
+Other architectures can currently only be installed in UEFI mode using this
+installation program. As such, the fully portable mode will not install in
+Legacy BIOS mode on aarch64 or other architectures, and will only install the
+UEFI bootloader (in removable mode of course). If you want to support another
+architecture-specific boot method, then you are welcome to
+[send a pull request](https://github.com/DanielMYT/osinstallgui/pulls).
+
 ## Should I have boot as a separate partition to root?
 One question you are asked during the disk setup stage of the installation is
 whether or not you want to have `/` and `/boot` on separate partitions. This
@@ -275,6 +304,11 @@ another OS, it is very likely that one already exists - and you can safely use
 it. Multiple UEFI bootloaders (for different operating systems) can share the
 same EFI partition, and will not conflict with each other, and the partition
 will not need to be re-formatted if it is already **FAT32**.
+
+**NOTE:** Legacy BIOS is only supported on i386/i486/i586/i686 and x86_64.
+Other architectures can currently only be installed in UEFI mode using this
+installation program. If you want to support another architecture-specific boot
+method, [send a pull request](https://github.com/DanielMYT/osinstallgui/pulls).
 
 ## No physical disks were found
 Here is the following most likely cause of your internal disk failing to be

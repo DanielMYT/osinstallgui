@@ -1790,14 +1790,6 @@ priv mkdir -p "$tgtpath"
 # However UEFI is the only supported boot method on non-x86_64.
 if test -e /sys/firmware/efi/systab; then
   export efimode=1
-  # Specify EFI architecture for grub install (e.g. ARCH-efi).
-  case "$(uname -m)" in
-    i?86) export efiarch="i386" efiarchid="IA32" ;;
-    x86_64) export efiarch="x86_64" efiarchid="X64" ;;
-    aarch64) export efiarch="arm64" efiarchid="AA64" ;;
-    # TODO: Support other UEFI architectures...
-    *) export efiarch="$(uname -m)" efiarchid="$(uname -m)" ;;
-  esac
 elif uname -m | grep -qE '^x86_64$|^i.86$'; then
   # i?86 and x86_64 systems support the Legacy BIOS boot method.
   export efimode=0
@@ -1806,6 +1798,16 @@ else
   write_log "Unknown boot method (not UEFI) and Legacy BIOS is unsupported."
   die "Unknown boot method (not UEFI) and Legacy BIOS is unsupported."
 fi
+
+# Specify EFI architecture for grub install (e.g. ARCH-efi).
+# Even if we are not booted in UEFI, fully portable mode needs this.
+case "$(uname -m)" in
+  i?86) export efiarch="i386" efiarchid="IA32" ;;
+  x86_64) export efiarch="x86_64" efiarchid="X64" ;;
+  aarch64) export efiarch="arm64" efiarchid="AA64" ;;
+  # TODO: Support other UEFI architectures...
+  *) export efiarch="$(uname -m)" efiarchid="$(uname -m)" ;;
+esac
 
 # Set the current stage we are on.
 export stage=0

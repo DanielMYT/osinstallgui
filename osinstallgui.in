@@ -775,26 +775,24 @@ stage_diskpar() {
       # Ask about fully portable mode if necessary.
       # Either the disk is removable or always offer option is enabled.
       # But we need a different prompt for each, so as to not confuse the user.
+      local fullyportable=0
       if test "$OSINSTALLGUI_ALWAYS_OFFER_FULLPORT" = "1" && yad_prompt "Erase Disk" "Would you like to set up this disk for a fully portable installation, so it can be easily moved between and booted on different computers? Answer 'NO' unless you are installing onto a USB flash drive or portable HDD/SSD. See go.dmassey.net/of2 for more information."; then
-        local fullyportable=1
+        fullyportable=1
       elif udevadm info -q property -n "$diskselection" | grep -qE '^ID_USB_DRIVER|^ID_BUS=usb' && yad_prompt "Erase Disk" "The installer detected the selected disk to be a removable drive (e.g., USB flash drive or portable HDD/SSD). Would you like to set up this disk for a fully portable installation, so it can be easily moved between and booted on different computers? See go.dmassey.net/of2 for more information."; then
-        local fullyportable=1
-      else
-        local fullyportable=0
+        fullyportable=1
       fi
       # Ask if btrfs should be used, if supported and enabled in configuration.
+      local btrfsuse=0
       if test "$OSINSTALLGUI_ALLOW_BTRFS" = "1" && which mkfs.btrfs &>/dev/null && yad_prompt "Erase Disk" "Would you like to use btrfs for the root partition? This is recommended, unless you have a specfic reason to prefer the traditional ext4."; then
-        local btrfsuse=1
-      else
-        local btrfsuse=0
+        btrfsuse=1
       fi
       # Ask if the user wants to split root and boot.
+      local splitbootuse=0
       if yad_prompt "Erase Disk" "Would you like to have '/' and '/boot' on separate partitions? It is recommended (but not required) that you answer 'YES' if you intend to set up disk encryption with LUKS, and 'NO' otherwise. Visit go.dmassey.net/of3 for more clarification about this question."; then
-        local splitbootuse=1
-      else
-        local splitbootuse=0
+        splitbootuse=1
       fi
       # Ask if the user wants swap space.
+      local swapsize=""
       if yad_prompt "Erase Disk" "Swap is a reserved area on the disk which can act as an emergency RAM backup in case the system RAM becomes full. Would you like to make use of a swap file?"; then
         # Ask how much swap space the user wants.
         local choiceswapsize="$(yad_menu "Erase Disk" "Please select the size you wish the swap file to be. Be advised that higher sizes will reduce the amount of free space you have after installation." "Size" "Note" \
@@ -802,7 +800,7 @@ stage_diskpar() {
         "4G" "" \
         "8G" "" \
         "16G" "")"
-        local swapsize="${choiceswapsize%%|*}"
+        swapsize="${choiceswapsize%%|*}"
         # If the user backed out of the menu, use the default value.
         if test -z "$swapsize"; then
           swapsize="2G"

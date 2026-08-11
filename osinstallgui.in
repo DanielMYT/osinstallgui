@@ -796,14 +796,15 @@ stage_diskpar() {
       if yad_prompt "Erase Disk" "Swap is a reserved area on the disk which can act as an emergency RAM backup in case the system RAM becomes full. Would you like to make use of a swap file?"; then
         # Ask how much swap space the user wants.
         local choiceswapsize="$(yad_menu "Erase Disk" "Please select the size you wish the swap file to be. Be advised that higher sizes will reduce the amount of free space you have after installation." "Size" "Note" \
-        "2G" "Default" \
-        "4G" "" \
-        "8G" "" \
+        "2G" "Recommended default for systems with more than 8GB of RAM." \
+        "4G" "Recommended default for systems with 8GB or less RAM." \
+        "8G" "Only for heavy workflows on RAM-constrained systems." \
+        "12G" "" \
         "16G" "")"
         swapsize="${choiceswapsize%%|*}"
         # If the user backed out of the menu, use the default value.
         if test -z "$swapsize"; then
-          swapsize="2G"
+          swapsize="4G"
         fi
       fi
       # Generate information about the setup to display in the confirmation.
@@ -1058,14 +1059,15 @@ stage_diskpar() {
       if yad_prompt "Partition Setup" "Swap is a reserved area on the disk which can act as an emergency RAM backup in case the system RAM becomes full. Would you like to make use of a swap file?"; then
         # Ask how much swap space the user wants.
         local choiceswapsize="$(yad_menu "Erase Disk" "Please select the size you wish the swap file to be. Be advised that higher sizes will reduce the amount of free space you have after installation." "Size" "Note" \
-        "2G" "Default" \
-        "4G" "" \
-        "8G" "" \
+        "2G" "Recommended default for systems with more than 8GB of RAM." \
+        "4G" "Recommended default for systems with 8GB or less RAM." \
+        "8G" "Only for heavy workflows on RAM-constrained systems." \
+        "12G" "" \
         "16G" "")"
         swapsize="${choiceswapsize%%|*}"
         # If the user backed out of the menu, use the default value.
         if test -z "$swapsize"; then
-          swapsize="2G"
+          swapsize="4G"
         fi
       fi
       # Final warning before we format.

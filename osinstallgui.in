@@ -1804,6 +1804,7 @@ fi
 case "$(uname -m)" in
   i?86) export efiarch="i386" efiarchid="IA32" ;;
   x86_64) export efiarch="x86_64" efiarchid="X64" ;;
+  armv*) export efiarch="arm" efiarchid="ARM" ;;
   aarch64) export efiarch="arm64" efiarchid="AA64" ;;
   # TODO: Support other UEFI architectures...
   *) export efiarch="$(uname -m)" efiarchid="$(uname -m)" ;;

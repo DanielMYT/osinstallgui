@@ -144,20 +144,13 @@ helper_sortentries() {
       echo "${itemsunsorted[item]}" >>"$sortfilepre2"
     fi
   done
-  # Sort timezones, if needed. Otherwise, sort normally by alphabetical order.
-  if test "$SORTTZ" = "1"; then
-    # We want to sort by UTC offset.
-    # Where -12 is the first, and +12 is the last.
-    # To do this, get the negative values and sort in reverse.
-    # Then get the positive values and sort normally.
-    paste "$sortfilepre1" "$sortfilepre2" | grep UTC- | sort -rk2 | cut -f1 >"$sortfilepost1"
-    paste "$sortfilepre1" "$sortfilepre2" | grep UTC- | sort -rk2 | cut -f2 >"$sortfilepost2"
-    paste "$sortfilepre1" "$sortfilepre2" | grep UTC+ | sort -k2 | cut -f1 >>"$sortfilepost1"
-    paste "$sortfilepre1" "$sortfilepre2" | grep UTC+ | sort -k2 | cut -f2 >>"$sortfilepost2"
-  else
-    paste "$sortfilepre1" "$sortfilepre2" | sort -k2 | cut -f1 >"$sortfilepost1"
-    paste "$sortfilepre1" "$sortfilepre2" | sort -k2 | cut -f2 >"$sortfilepost2"
-  fi
+  # Sort timezones by UTC offset where -12 is the first, and +12 is the last.
+  # To do this, get the negative values and sort in reverse.
+  # Then get the positive values and sort normally.
+  paste "$sortfilepre1" "$sortfilepre2" | grep UTC- | sort -rk2 | cut -f1 >"$sortfilepost1"
+  paste "$sortfilepre1" "$sortfilepre2" | grep UTC- | sort -rk2 | cut -f2 >"$sortfilepost2"
+  paste "$sortfilepre1" "$sortfilepre2" | grep UTC+ | sort -k2 | cut -f1 >>"$sortfilepost1"
+  paste "$sortfilepre1" "$sortfilepre2" | grep UTC+ | sort -k2 | cut -f2 >>"$sortfilepost2"
   # Sort by the 2nd column (description), but keep consistent for 1st too.
   # Open file descriptors for both files, so we can access them while looping.
   # Use high numbers, in case lower ones are already in use for some reason.
@@ -535,7 +528,7 @@ stage_timezone() {
   done
   # Sort entries by UTC offset.
   local tzcities=()
-  readarray -t tzcities < <(SORTTZ=1 helper_sortentries "${utzcities[@]}")
+  readarray -t tzcities < <(helper_sortentries "${utzcities[@]}")
   # Let the user decide which city they are in from their selected region.
   local choice_tzcity="$(yad_menu "Timezone Setup" "Please select the city from $choice_tzregion which best corresponds to your geographical location. Note that the UTC offsets, displayed in the right-hand column, will account for daylight saving time where applicable." "City" "UTC Offset" "${tzcities[@]}")"
   choice_tzcity="${choice_tzcity%%|*}"

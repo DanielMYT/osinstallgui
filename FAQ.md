@@ -4,28 +4,32 @@ This document aims to answer some frequently asked questions about
 that the program can display.
 
 ## Why does it exist? Why not use an existing installer?
-Great question! Generally, we'd recommend using an existing installer, as they
-will likely offer more features and stability. However, there are some reasons
-why this might not be practical. Here are some of the most well-known graphical
-installers, and problems they can cause:
+While major installers (from well-known distributions) exist, and will likely
+offer more features than customizability than **osinstallgui**, there are some
+reasons why they might not be practical. Here are some of the most well-known
+graphical installers, and problems they can cause:
 
 - **Calamares** - A graphical installer that is distro-independent and highly
-customizable. However, it requires the Qt GUI frameworks to run, which could be
-undesired to install on minimal distributions and/or ones which use a GTK-based
-desktop environment (these are the main reasons why MassOS has avoided it).
-- **Ubiquity** - The graphical installer used by Ubuntu and its derivatives.
-Unfortunately, it is heavily Ubuntu-specific and may not be practical to use on
-other distributions.
-- **Anaconda** - The graphical installer used by Fedora and possibly some other
-RHEL-based distributions. It may be somewhat specific to the structure of
-RHEL-based distros, however it's possible that it may also be more customizable
-and easier to port to other distros. The authors of **osinstallgui** don't have
-any knowledge of or familiarity with it.
+  customizable. However, it requires the Qt GUI frameworks to run, which could
+  be undesirable to install on distributions which use a GTK-based desktop
+  environment (this is the main reason why MassOS has chosen not to use it).
+- **Ubiquity** - The graphical installer used by Ubuntu and its derivatives. It
+  is heavily Ubuntu-specific and may not be practical to use on other
+  distributions. Additionally, modern versions of the Ubuntu desktop installer
+  may only run as a Snap package.
+- **Anaconda** - The graphical installer used by Fedora and a few other RedHat
+  based distributions. While it may be more customizable than Ubiquity, and
+  have less extreme dependencies like Calamares, it is written in Python, so it
+  will inherently be slower than most other installers.
 
 On the other hand, using **osinstallgui** has the following advantages:
 
 - It is very minimal, fast and lightweight.
 - It is simple to configure using a single well-documented configuration file.
+- **osinstallgui** contains a few (niche) features that do not exist in any
+  other installer, such as built-in support for creating a fully portable
+  installation on a removable drive that can boot in BOTH Legacy BIOS and UEFI
+  mode.
 
 However:
 

@@ -750,6 +750,13 @@ stage_diskpar() {
       test ! -z "$choice" || return
       # Set up the selection.
       local diskselection="${choice%%|*}"
+      # Adjust the minimum allowed rootfs size for an entire disk (+1.5GiB).
+      local diskminsize="$(( $OSINSTALLGUI_ROOTFS_MINIMUM_SIZE + 1572864001 ))"
+      # Compare the size of the selected disk to the minimum allowed size.
+      if test "$(priv blockdev --getsize64 "$diskselection" || echo 0)" -lt "$diskminsize"; then
+        yad_message "Error" "The selected disk $diskselection is too small to install $osname to. Please select another disk to use for the installation."
+        return
+      fi
       # Get the list of mounted partitions (if any), sorted by mount depth.
       local mountedparts="$(mount | grep "$diskselection" | cut -d' ' -f1,3 | sort -rk2 | cut -d' ' -f1)"
       # Allow us to try and unmount them if any exist.
@@ -983,6 +990,11 @@ stage_diskpar() {
       test ! -z "$choicerootpar" || return
       # Filter yad return value to get the selection.
       local rootparselection="${choicerootpar%%|*}"
+      # Compare the size of the selected root partition to minimum size.
+      if test "$(priv blockdev --getsize64 "$rootparselection" || echo 0)" -lt "$OSINSTALLGUI_ROOTFS_MINIMUM_SIZE"; then
+        yad_message "Error" "The selected partition $rootparselection is too small to install $osname to. Please select another partition, or use the manual partitioning option to increase the size of the partition."
+        return
+      fi
       # Check if the partition is mounted and try to unmount if so.
       if ! helper_try_umount "$rootparselection"; then
         yad_message "Error" "The selected partition $rootparselection is mounted and this program failed to unmount it automatically. Please try to unmount it manually, or alternatively select a different partition."
@@ -1736,6 +1748,7 @@ else
 fi
 
 # Set up defaults for configuration values which are not mandatory.
+test ! -z "$OSINSTALLGUI_ROOTFS_MINIMUM_SIZE" || OSINSTALLGUI_ROOTFS_MINIMUM_SIZE=8000000000
 test ! -z "$OSINSTALLGUI_ALLOW_BTRFS" || OSINSTALLGUI_ALLOW_BTRFS=1
 test ! -z "$OSINSTALLGUI_ALLOW_LUKS" || OSINSTALLGUI_ALLOW_LUKS=1
 test ! -z "$OSINSTALLGUI_LUKS_MAPPER_NAME" || OSINSTALLGUI_LUKS_MAPPER_NAME="cryptroot"

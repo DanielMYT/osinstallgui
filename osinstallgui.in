@@ -874,7 +874,7 @@ stage_diskpar() {
       fi
       # Partition the disk.
       write_log "Partitioning the disk $diskselection using fdisk."
-      echo -e "$operations" | priv fdisk "$diskselection" &>>"$log"
+      echo -e "$operations" | priv fdisk -w always "$diskselection" &>>"$log"
       if test $? -ne 0; then
         # OH NO! It failed, this could be bad.
         write_log "Failed to partition the disk $diskselection using fdisk."
